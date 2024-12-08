@@ -1,12 +1,12 @@
-# 47monad GoMake v0.0.1
+# 47monad GoMake v0.0.2
 #
 # =============================================================================
 # 🎯 Project Configuration
 # =============================================================================
 # Project Settings
-PROJECT_NAME ?= myapp
+PROJECT_NAME ?= $(shell basename $(CURDIR) | sed -E 's/[-_]/ /g; s/^(.)/\U\1/g')
 ORGANIZATION ?= 47monad
-DESCRIPTION ?= "My Awesome Go Project"
+DESCRIPTION ?= $(PROJECT_NAME) Project
 DISCLAIMER = "47monad | All rights reserved"
 MAINTAINER = "47monad"
 
@@ -91,7 +91,7 @@ TEST_TIMEOUT ?= 5m
 TEST_FLAGS ?= -v -race -cover
 TEST_PACKAGES ?= $(shell $(GO) list ./... | grep -v "mocks")
 COVERAGE_OUT ?= coverage.out
-COVERAGE_HTML ?= coverage.html
+COVERAGE_HTML ?= $(DOCS_DIR)/reports/coverage.html
 COVERAGE_THRESHOLD ?= 50
 BENCH_FLAGS ?= -benchmem
 BENCH_TIME ?= 2s
@@ -124,10 +124,10 @@ PACKAGE := printf "$(CYAN)📦 $(RESET)%s \n"
 TRASH := printf "$(YELLOW)🗑️  $(RESET)%s \n"
 
 # =============================================================================
-# 🎯 Core Build System
+##@ 🎯 Core Build System
 # =============================================================================
 .PHONY: build
-build: $(BIN_DIR) ## Build all targets
+build: $(BIN_DIR) ## Build all services
 	@$(WORKING) "Building project..."
 	for service in $(SERVICES); do \
 		@$(MAKE) build-$$service $(if $(filter true,$(ENABLE_PARALLEL)),--jobs=$(PARALLEL_JOBS)); \
@@ -135,8 +135,8 @@ build: $(BIN_DIR) ## Build all targets
 	@wait
 	@$(SUCCESS) "Build complete!"
 
-.PHONY: build-%
-build-%: generate
+.PHONY: build-% 
+build-%: generate ## Build a single service (% = service name)
 	@$(INFO) "Building $*..."
 	@if [ -f "$(BIN_DIR)/$*" ]; then \
 		rm "$(BIN_DIR)/$*"; \
@@ -156,13 +156,13 @@ build-%: generate
 	@$(SUCCESS) "$* service was built successfully."
 
 .PHONY: bake-%
-bake-%:
+bake-%: ## Prepare service (% = service name)
 	@$(INFO) "Baking config for $* ..."
 	@$(SERCON) -base ./config/$* -output .sercon/$*/apin.json
 	@$(SUCCESS) "\n $* config baked successfully."
 
 # =============================================================================
-# 🧪 Testing & Quality
+##@ 🧪 Testing & Quality
 # =============================================================================
 .PHONY: test
 test: ## Run tests
@@ -173,13 +173,16 @@ test: ## Run tests
 		$(if $(SKIP_PATTERN),-skip '$(SKIP_PATTERN)') \
 		$(TEST_PACKAGES)
 
-.PHONY: test-coverage
-test-coverage: ## Run tests with coverage
+.PHONY: coverage
+coverage: ## Run tests with coverage
 	@$(INFO) "Running tests with coverage..."
 	$(GO) test $(TEST_FLAGS) \
 		-timeout $(TEST_TIMEOUT) \
 		-coverprofile=$(COVERAGE_OUT) \
 		$(TEST_PACKAGES)
+	@if [ ! -d $(DOCS_DIR)/reports ]; then \
+		mkdir -p $(DOCS_DIR)/reports; \
+	fi
 	$(GO) tool cover -html=$(COVERAGE_OUT) -o $(COVERAGE_HTML)
 	@coverage=$$(go tool cover -func=$(COVERAGE_OUT) | grep total | awk '{print $$3}' | sed 's/%//'); \
 	if [ "$${coverage%.*}" -lt "$(COVERAGE_THRESHOLD)" ]; then \
@@ -208,7 +211,7 @@ security: ## Run security checks
 	@$(SUCCESS) "Security check complete!"
 
 # =============================================================================
-# 🧹 Cleanup & Maintenance
+##@ 🧹 Cleanup & Maintenance
 # =============================================================================
 .PHONY: clean
 clean: ## Clean build artifacts
@@ -243,16 +246,16 @@ deps-verify: ## Verify dependencies
 	@$(SUCCESS) "Dependencies verified!"
 
 # =============================================================================
-# 🔄 Development Workflow
+##@ 🔄 Development Workflow
 # =============================================================================
-.PHONY: dev
-dev-%: deps generate ## Start development environment
+.PHONY: dev-%
+dev-%: deps bake-% generate ## Start development environment (% = service name)
 	@$(INFO) "Starting $* development environment..."
 	@$(ROCKET) "Running $*..."
 	$(GO) run cmd/$*/main.go
 
 .PHONY: run-%
-run-%: bake-% build-% ## Run the application
+run-%: bake-% build-% ## Run the application (% = service name)
 	@if echo "$(SERVICES)" | grep -wq "cmd/$*"; then \
 		$(ROCKET) "Running $*..."; \
 		$(BIN_DIR)/$*; \
@@ -268,7 +271,7 @@ generate: ## Run code generation
 	@$(SUCCESS) "Generation complete!"
 
 # =============================================================================
-# 🛠️ Tools & Utilities
+##@ 🛠️ Tools & Utilities
 # =============================================================================
 .PHONY: tools
 tools: ## Install all tools
@@ -308,16 +311,16 @@ version: ## Display version information
 	@printf "$(CYAN)Branch:$(RESET)     %s \n" $(GIT_BRANCH)
 	@printf "$(CYAN)Built:$(RESET)      %s \n" $(BUILD_TIME)
 	@printf "$(CYAN)Built by:$(RESET)   %s \n" $(BUILD_BY)
-	@printf "$(CYAN)Go version:$(RESET) %s \n" "$(shell $(GO) version)"
+	@printf "$(CYAN)Go version:$(RESET) %s \n" "$(shell go version | sed 's/^go version //')"
 
 # =============================================================================
-# 📊 Reporting & Analytics
+##@ 📊 Reporting & Analytics
 # =============================================================================
 .PHONY: report
 report: ## Generate project reports
 	@$(INFO) "Generating project reports..."
 	@mkdir -p $(DOCS_DIR)/reports
-	@$(MAKE) test-coverage
+	@$(MAKE) coverage
 	@$(MAKE) benchmark-report
 	@$(MAKE) lint-report
 	@$(MAKE) security-report
@@ -342,16 +345,16 @@ $(BIN_DIR) $(DIST_DIR) $(DOCS_DIR):
 	mkdir -p $@
 
 # =============================================================================
-# 💡 Help
+##@ 💡 Help
 # =============================================================================
 .PHONY: help
 help: ## Show this help message
-	@printf "$(CYAN)$(BOLD)%s - %s$(RESET) \n" $(PROJECT_NAME) $(DESCRIPTION)
-	@printf "$(WHITE)Maintained by %s$(RESET) \n \n" $(MAINTAINER)
+	@printf "$(CYAN)$(BOLD)%s$(RESET) - %s \n" "$(PROJECT_NAME)" "$(DESCRIPTION)"
+	@printf "$(WHITE)Maintained by %s$(RESET) \n \n" "$(MAINTAINER)"
 	@printf "$(RED)Service list: $(RESET) %s \n\n" "$(SERVICES)"
 	@printf "$(CYAN)$(BOLD)Available targets:$(RESET) \n"
 	@awk 'BEGIN {FS = ":.*##"; printf ""} \
-		/^[a-zA-Z_-]+:.*?##/ { printf "  $(BLUE)* %-20s$(RESET) %s\n", $$1, $$2 } \
+		/^[a-zA-Z_%-]+:.*?##/ { printf "  $(BLUE)* %-20s$(RESET) %s\n", $$1, $$2 } \
 		/^##@/ { printf "\n$(MAGENTA)%s$(RESET)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 	@printf "\n $(YELLOW)$(BOLD) ** %s ** $(RESET) \n" $(DISCLAIMER)
 
