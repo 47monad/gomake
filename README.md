@@ -1,80 +1,96 @@
-# 47monad Makefile Repository
--- Version: 0.0.1
+# 47monad Gomake
+
+## Version
+
+Current version: **0.0.3**
 
 ## Overview
 
-This repository contains a **centralized Makefile** designed to standardize and simplify project automation across all 47monad microservices. The Makefile includes a comprehensive set of commands for tasks such as development, testing, building, linting, formatting, cleaning, and more.
-
-By using this Makefile, teams can:
-- Maintain consistency across projects.
-- Reduce the overhead of setting up project-specific automation.
-- Ensure that all services adhere to the company’s engineering standards.
-
----
+Gomake is a powerful Makefile-based build system for Go projects, providing a
+streamlined workflow for building, testing, linting, and deploying Go services.
+It supports multi-service repositories, parallel builds, and extensive
+automation features.
 
 ## Features
 
-NOTE: **(service)** should be substituted with the name of the service you are trying to run.
-The Makefile supports the following categories of tasks:
+- 🚀 **Automated Build System**: Supports building all or specific services.
+- 🧪 **Testing & Coverage**: Runs unit tests, generates coverage reports, and
+checks for race conditions.
+- 🎨 **Code Quality**: Lints code, formats files, and runs security checks.
+- 🔄 **Dependency Management**: Installs, updates, and verifies dependencies.
+- 📊 **Reporting & Analytics**: Generates benchmark, lint, and security reports.
+- 🔁 **Self-Update**: Fetches the latest Makefile from the repository.
 
-### Help
-- **`make`** or **`make help`**: See the list of commands and services.
+## Installation
 
-### Development
-- **`make run-(service)`**: Start the application in development mode.
-- **`make dev`**: Start development tools, including hot reloading (if applicable).
+Clone the repository and ensure you have `make` installed:
 
-### Build & Deploy
-- **`make build-(service)`**: Build the service for production.
-
-### Code Quality
-- **`make lint`**: Run code linters to enforce style and quality.
-- **`make format`**: Automatically format code to conform to standards.
-
-### Testing
-- **`make test`**: Run unit tests.
-- **`make coverage`**: Generate test coverage reports.
-
-### Maintenance
-- **`make clean`**: Remove temporary files, build artifacts, and cached data.
-- **`make deps`**: Download dependencies and tools.
-- **`make deps-update`**: Update dependencies and tools.
-- **`make deps-tidy`**: Tidy dependencies and tools.
-
-### Tooling
-- **`make tools`**: Install required tools and dependencies.
-
----
+```sh
+git clone https://github.com/47monad/gomake.git
+cd gomake
+```
 
 ## Usage
 
-### Integration into a Project
-Copy the Makefile to the root of your repository any way you want and start using.
+Run the following `make` commands to execute different tasks:
 
-You can customize this Makefile or add your own targets like a normal Makefile. However for the sake of consistency this is **NOT RECOMMENDED**.
+### Build
 
-### Running Commands
-Navigate to the root of your project and use `make` commands:
-```bash
-make <command>
-```
-For example:
-```bash
-make run-reader
-make lint
+```sh
+make build       # Build all services
+make build-<svc> # Build a specific service (replace <svc> with service name)
 ```
 
----
+### Testing & Coverage
 
-## Contribution Guidelines
+```sh
+make test        # Run tests
+make coverage    # Run tests with coverage report
+```
 
-Since this repository is used across the company, contributions must adhere to the following rules:
-- **Follow coding standards**: Ensure all scripts and tools conform to the company’s engineering standards.
-- **Document new targets**: Update this README and add clear comments in the Makefile for any new targets.
-- **Test changes**: Validate changes against multiple projects before merging.
+### Linting & Formatting
 
----
+```sh
+make lint        # Run linters
+make fmt         # Format code
+```
+
+### Dependency Management
+
+```sh
+make deps        # Install dependencies
+make deps-tidy   # Tidy dependencies
+make deps-update # Update dependencies
+make deps-verify # Verify dependencies
+```
+
+### Running Services
+
+```sh
+make run-<svc>   # Run a specific service
+```
+
+### Reports
+
+```sh
+make report      # Generate all reports (coverage, benchmark, lint, security)
+```
+
+### Updating Makefile
+
+```sh
+make self-update # Fetch the latest Makefile from the repository
+```
+
+## Configuration
+
+Modify environment variables in the Makefile to customize build settings,
+services, and testing parameters.
 
 ## License
 
-This repository is private and proprietary. Only authorized personnel are permitted to use or modify its contents.
+47monad | All rights reserved
+
+## Maintainer
+
+Maintained by 47monad.
