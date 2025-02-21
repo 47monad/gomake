@@ -1,5 +1,11 @@
-# 47monad GoMake v0.0.2
+# 47monad GoMake v0.0.3
 #
+# =============================================================================
+# ⚙️ Makefile Configuration
+# =============================================================================
+REPO_URL=https://raw.githubusercontent.com/47monad/gomake/refs/heads/main/Makefile
+SELF_FILE=$(lastword $(MAKEFILE_LIST))
+
 # =============================================================================
 # 🎯 Project Configuration
 # =============================================================================
@@ -59,7 +65,6 @@ GOFUMPT ?= $(GOBIN)/gofumpt
 GODOC ?= $(GOBIN)/godoc
 GOVULNCHECK ?= $(GOBIN)/govulncheck
 MOCKERY ?= mockery
-SERCON ?= $(GOBIN)/sercon
 
 # Directories
 ROOT_DIR ?= $(shell pwd)
@@ -158,7 +163,6 @@ build-%: generate ## Build a single service (% = service name)
 .PHONY: bake-%
 bake-%: ## Prepare service (% = service name)
 	@$(INFO) "Baking config for $* ..."
-	@$(SERCON) -base ./config/$* -output .sercon/$*/apin.json
 	@$(SUCCESS) "\n $* config baked successfully."
 
 # =============================================================================
@@ -291,11 +295,6 @@ tools: ## Install all tools
 		$(GO) install golang.org/x/vuln/cmd/govulncheck@latest; \
 		$(SUCCESS) "govulncheck was installed successfully"; \
 	fi
-	@if [ ! -f "$(SERCON)" ]; then \
-		$(INFO) "Installing sercon..."; \
-		$(GO) install github.com/47monad/sercon@latest; \
-		$(SUCCESS) "sercon was installed successfully"; \
-	fi
 	@$(SUCCESS) "Tools installed!"
 
 .PHONY: mock
@@ -343,6 +342,14 @@ security-report:
 # =============================================================================
 $(BIN_DIR) $(DIST_DIR) $(DOCS_DIR):
 	mkdir -p $@
+
+# =============================================================================
+##@ 🔁 Self
+# =============================================================================
+self-update:
+	@echo "Updating $(SELF_FILE)..."
+	@curl -sSfL $(REPO_URL) -o $(SELF_FILE)
+	@echo "Update complete."
 
 # =============================================================================
 ##@ 💡 Help
