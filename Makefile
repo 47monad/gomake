@@ -17,8 +17,13 @@ DISCLAIMER = "47monad | All rights reserved"
 MAINTAINER = "47monad"
 
 # Services
-SERVICES ?= $(wildcard cmd/*)
-SERVICE_PATH = cmd/$*
+# A service is either a directory under cmd/ (cmd/<name>/main.go or
+# cmd/<name>/Makefile) or a single flat package (cmd/main.go), which is used
+# as a fallback when no service directories exist.
+SERVICE_DIRS := $(notdir $(foreach d,$(wildcard cmd/*),$(if $(wildcard $(d)/.),$(d))))
+FLAT_SERVICE ?= $(if $(strip $(SERVICE_DIRS)),,$(if $(wildcard cmd/main.go),main))
+SERVICES ?= $(SERVICE_DIRS) $(FLAT_SERVICE)
+SERVICE_PATH = $(if $(filter $(FLAT_SERVICE),$*),cmd,cmd/$*)
 
 # Build Settings
 BUILD_SYSTEM ?= local # local, ci
@@ -134,10 +139,13 @@ TRASH := printf "$(YELLOW)🗑️  $(RESET)%s \n"
 .PHONY: build
 build: $(BIN_DIR) ## Build all services
 	@$(WORKING) "Building project..."
-	for service in $(SERVICES); do \
-		@$(MAKE) build-$$service $(if $(filter true,$(ENABLE_PARALLEL)),--jobs=$(PARALLEL_JOBS)); \
+	@if [ -z "$(strip $(SERVICES))" ]; then \
+		$(ERROR) "No services found. Expected cmd/<name>/main.go or cmd/main.go."; \
+		exit 1; \
+	fi
+	@for service in $(SERVICES); do \
+		$(MAKE) build-$$service $(if $(filter true,$(ENABLE_PARALLEL)),--jobs=$(PARALLEL_JOBS)); \
 	done
-	@wait
 	@$(SUCCESS) "Build complete!"
 
 .PHONY: build-% 
@@ -256,11 +264,11 @@ deps-verify: ## Verify dependencies
 dev-%: deps bake-% generate ## Start development environment (% = service name)
 	@$(INFO) "Starting $* development environment..."
 	@$(ROCKET) "Running $*..."
-	$(GO) run cmd/$*/main.go
+	$(GO) run ./$(SERVICE_PATH)/main.go
 
 .PHONY: run-%
 run-%: bake-% build-% ## Run the application (% = service name)
-	@if echo "$(SERVICES)" | grep -wq "cmd/$*"; then \
+	@if echo "$(SERVICES)" | grep -wq "$*"; then \
 		$(ROCKET) "Running $*..."; \
 		$(BIN_DIR)/$*; \
 	else \
