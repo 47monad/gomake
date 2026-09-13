@@ -88,12 +88,31 @@ EXTRA_TAGS ?=
 ALL_TAGS = $(BUILD_TAGS) $(EXTRA_TAGS)
 
 # Linker Flags
+#
+# Version metadata is injected into the variables declared by VERSION_PKG,
+# which defaults to <module>/pkg/version. Override VERSION_PKG if the project
+# keeps those variables in a different package.
+#
+# MODULE_PATH is resolved from go.mod and normalized once; `go list -m` prints
+# "command-line-arguments" outside a module, which must not become an -X import
+# path, so the -X flags are skipped when no module path is available.
+MODULE_PATH ?= $(shell $(GO) list -m 2>/dev/null)
+MODULE_PATH := $(strip $(filter-out command-line-arguments,$(MODULE_PATH)))
+VERSION_PKG ?= $(MODULE_PATH)/pkg/version
+
+# Strip single quotes from values taken from git refs or the environment so
+# they cannot break out of the single-quoted -ldflags argument in the recipe.
+# The value is passed to the linker literally; it is never evaluated by a shell.
+sanitize = $(subst ',,$(1))
+
 LD_FLAGS += -s -w
-LD_FLAGS += -X '$(shell go list -m)/pkg/version.Version=$(VERSION)'
-LD_FLAGS += -X '$(shell go list -m)/pkg/version.Commit=$(GIT_COMMIT)'
-LD_FLAGS += -X '$(shell go list -m)/pkg/version.Branch=$(GIT_BRANCH)'
-LD_FLAGS += -X '$(shell go list -m)/pkg/version.BuildTime=$(BUILD_TIME)'
-LD_FLAGS += -X '$(shell go list -m)/pkg/version.BuildBy=$(BUILD_BY)'
+ifneq ($(strip $(MODULE_PATH)),)
+LD_FLAGS += -X $(VERSION_PKG).Version=$(call sanitize,$(VERSION))
+LD_FLAGS += -X $(VERSION_PKG).Commit=$(call sanitize,$(GIT_COMMIT))
+LD_FLAGS += -X $(VERSION_PKG).Branch=$(call sanitize,$(GIT_BRANCH))
+LD_FLAGS += -X $(VERSION_PKG).BuildTime=$(call sanitize,$(BUILD_TIME))
+LD_FLAGS += -X $(VERSION_PKG).BuildBy=$(call sanitize,$(BUILD_BY))
+endif
 
 # Performance & Debug Flags
 GCFLAGS ?=
@@ -163,7 +182,7 @@ build-%: generate ## Build a single service (% = service name)
 		CGO_ENABLED=$(CGO_ENABLED) \
 		$(GO) build -tags '$(ALL_TAGS)' \
 			$(if $(filter true,$(ENABLE_BUILD_CACHE)),-x) \
-			-ldflags '$(LD_FLAGS)' \
+			-ldflags '$(strip $(LD_FLAGS))' \
 			-gcflags '$(GCFLAGS)' \
 			-asmflags '$(ASMFLAGS)' \
 			-o $(BIN_DIR)/$* \
@@ -316,11 +335,11 @@ mock: ## Generate mocks
 
 .PHONY: version
 version: ## Display version information
-	@printf "$(CYAN)Version:$(RESET)    %s \n" $(VERSION)
-	@printf "$(CYAN)Commit:$(RESET)     %s \n" $(GIT_COMMIT)
-	@printf "$(CYAN)Branch:$(RESET)     %s \n" $(GIT_BRANCH)
-	@printf "$(CYAN)Built:$(RESET)      %s \n" $(BUILD_TIME)
-	@printf "$(CYAN)Built by:$(RESET)   %s \n" $(BUILD_BY)
+	@printf "$(CYAN)Version:$(RESET)    %s \n" '$(call sanitize,$(VERSION))'
+	@printf "$(CYAN)Commit:$(RESET)     %s \n" '$(call sanitize,$(GIT_COMMIT))'
+	@printf "$(CYAN)Branch:$(RESET)     %s \n" '$(call sanitize,$(GIT_BRANCH))'
+	@printf "$(CYAN)Built:$(RESET)      %s \n" '$(call sanitize,$(BUILD_TIME))'
+	@printf "$(CYAN)Built by:$(RESET)   %s \n" '$(call sanitize,$(BUILD_BY))'
 	@printf "$(CYAN)Go version:$(RESET) %s \n" "$(shell go version | sed 's/^go version //')"
 
 # =============================================================================
