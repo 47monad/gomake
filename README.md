@@ -87,6 +87,17 @@ make self-update # Fetch the latest Makefile from the repository
 Modify environment variables in the Makefile to customize build settings,
 services, and testing parameters.
 
+### Version metadata
+
+Build metadata (`Version`, `Commit`, `Branch`, `BuildTime`, `BuildBy`) is
+injected at link time into the package named by `VERSION_PKG`, which defaults
+to `<module>/pkg/version`. Override `VERSION_PKG` if the project keeps those
+variables in a different package.
+
+The module path is read once from `go.mod` via `MODULE_PATH`. When no module is
+present (for example a standalone `go run`), the metadata flags are skipped
+rather than emitting an invalid import path.
+
 ## License
 
 47monad | All rights reserved
