@@ -26,8 +26,10 @@ SERVICES ?= $(SERVICE_DIRS) $(FLAT_SERVICE)
 SERVICE_PATH = $(if $(filter $(FLAT_SERVICE),$*),cmd,cmd/$*)
 
 # Build Settings
-BUILD_SYSTEM ?= local # local, ci
-CI_SYSTEM ?= github # github, gitlab, jenkins
+# BUILD_SYSTEM: local, ci
+BUILD_SYSTEM ?= local
+# CI_SYSTEM: github, gitlab, jenkins
+CI_SYSTEM ?= github
 PARALLEL_JOBS ?= $(shell \
     if command -v nproc >/dev/null 2>&1; then \
         nproc; \
@@ -38,14 +40,15 @@ PARALLEL_JOBS ?= $(shell \
     else \
         echo 1; \
     fi)
-ENABLE_PARALLEL := $(if $(filter local,$(BUILD_SYSTEM)),true,false)
+ENABLE_PARALLEL := $(if $(filter local,$(strip $(BUILD_SYSTEM))),true,false)
 
 # Version Control
-VERSION_STRATEGY ?= git # git, semver, date
+# VERSION_STRATEGY: git, semver, date
+VERSION_STRATEGY ?= git
 VERSION := $(shell \
-    if [ "$(VERSION_STRATEGY)" = "git" ] && git rev-parse --git-dir > /dev/null 2>&1; then \
+    if [ "$(strip $(VERSION_STRATEGY))" = "git" ] && git rev-parse --git-dir > /dev/null 2>&1; then \
         git describe --tags --always --dirty 2>/dev/null || echo "dev"; \
-    elif [ "$(VERSION_STRATEGY)" = "semver" ]; then \
+    elif [ "$(strip $(VERSION_STRATEGY))" = "semver" ]; then \
         cat VERSION 2>/dev/null || echo "0.1.0"; \
     else \
         date -u '+%Y%m%d-%H%M%S'; \
