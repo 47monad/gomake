@@ -208,7 +208,6 @@ build-%: generate | $(BIN_DIR) ## Build a single service (% = service name)
 	else \
 		CGO_ENABLED=$(CGO_ENABLED) \
 		$(GO) build -tags '$(ALL_TAGS)' \
-			$(if $(filter true,$(ENABLE_BUILD_CACHE)),-x) \
 			-ldflags '$(strip $(LD_FLAGS))' \
 			-gcflags '$(GCFLAGS)' \
 			-asmflags '$(ASMFLAGS)' \
