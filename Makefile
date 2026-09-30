@@ -380,7 +380,8 @@ benchmark-report:
 
 .PHONY: lint-report
 lint-report:
-	$(GOLANGCI_LINT) run --out-format checkstyle > $(DOCS_DIR)/reports/lint-checkstyle.xml
+	@mkdir -p "$(DOCS_DIR)/reports"
+	$(GOLANGCI_LINT) run --output.checkstyle.path="$(DOCS_DIR)/reports/lint-checkstyle.xml"
 
 .PHONY: security-report
 security-report:
