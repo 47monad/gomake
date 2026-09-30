@@ -12,18 +12,24 @@
 #
 # The digest covers the file *excluding the GOMAKE_SHA256 assignment itself*, so
 # a release can pin its own checksum (a file cannot contain the hash of itself).
-# `make self-checksum` prints the value to record here when preparing a release.
-# GOMAKE_ALLOW_UNVERIFIED=1 skips the check for a one-off, otherwise-unverified
-# update.
+# Because that line is excluded from the hash, `self-update` also validates it as
+# literal data: exactly one `GOMAKE_SHA256 ?= <64-hex>` assignment whose value
+# equals the download's own filtered digest. Expressions, duplicates, an empty
+# value, or a forged pin are rejected before anything is replaced.
+#
+# GOMAKE_ALLOW_UNVERIFIED=1 only waives the caller-side pin; it never skips the
+# structural validation above.
 GOMAKE_VERSION ?= v0.1.0
 GOMAKE_REPO ?= 47monad/gomake
 GOMAKE_REF ?= $(GOMAKE_VERSION)
 GOMAKE_SHA256 ?= 3ba8c859ba266c07e6ec01aea289276fce2cf08bbd7b3d88f12771d27f7faa25
 GOMAKE_ALLOW_UNVERIFIED ?= 0
-REPO_URL = https://raw.githubusercontent.com/$(GOMAKE_REPO)/$(GOMAKE_REF)/Makefile
+# Exported so the recipe reads them as data, never interpolated into shell code.
+export GOMAKE_REPO GOMAKE_REF GOMAKE_SHA256 GOMAKE_ALLOW_UNVERIFIED
 
 # SHA-256 command: sha256sum on GNU/Linux, shasum on macOS.
 SHA256 ?= $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
+SHA256_BIN = $(firstword $(SHA256))
 
 # Hash everything except the GOMAKE_SHA256 assignment, so the pin can cover the
 # file that contains it (see the note above).
@@ -433,22 +439,49 @@ $(BIN_DIR) $(DIST_DIR) $(DOCS_DIR):
 # =============================================================================
 .PHONY: self-update
 self-update: ## Update GoMake from the pinned upstream revision
-	@echo "Updating $(SELF_FILE) from $(GOMAKE_REPO)@$(GOMAKE_REF)..."
+	@echo "Updating $(SELF_FILE) from $$GOMAKE_REPO@$$GOMAKE_REF..."
 	@tmp=$$(mktemp "$${TMPDIR:-/tmp}/gomake.XXXXXX") || exit 1; \
 	trap 'rm -f "$$tmp"' EXIT; \
-	curl --proto '=https' --tlsv1.2 -sSfL "$(REPO_URL)" -o "$$tmp" || { $(ERROR) "download failed"; exit 1; }; \
+	case "$$GOMAKE_REF" in \
+		"") $(ERROR) "GOMAKE_REF is empty"; exit 1;; \
+		*[!A-Za-z0-9._/-]*) $(ERROR) "GOMAKE_REF '$$GOMAKE_REF' contains unsupported characters"; exit 1;; \
+		main|master|HEAD|trunk|develop|development|refs/heads/*) \
+			$(ERROR) "GOMAKE_REF '$$GOMAKE_REF' looks like a moving branch; pin a tag or a full commit SHA"; \
+			exit 1;; \
+	esac; \
+	url="https://raw.githubusercontent.com/$$GOMAKE_REPO/$$GOMAKE_REF/Makefile"; \
+	curl --proto '=https' --tlsv1.2 -sSfL "$$url" -o "$$tmp" || { $(ERROR) "download failed: $$url"; exit 1; }; \
 	if [ ! -s "$$tmp" ]; then $(ERROR) "downloaded file is empty"; exit 1; fi; \
 	if ! grep -q '[.]DEFAULT_GOAL' "$$tmp"; then $(ERROR) "downloaded file does not look like GoMake"; exit 1; fi; \
-	actual=$$($(DIGEST_FILTER) "$$tmp" | $(SHA256) | awk '{print $$1}'); \
-	if [ -n "$(GOMAKE_SHA256)" ] && [ "$$actual" != "$(GOMAKE_SHA256)" ]; then \
-		$(ERROR) "checksum mismatch for $(GOMAKE_REPO)@$(GOMAKE_REF)"; \
-		$(ERROR) "expected $(GOMAKE_SHA256)"; \
-		$(ERROR) "got      $$actual"; \
+	assignments=$$(grep -cE '^[[:space:]]*(override[[:space:]]+|export[[:space:]]+)?GOMAKE_SHA256[[:space:]]*[?:+]?=' "$$tmp"); \
+	literal=$$(grep -cE '^GOMAKE_SHA256[[:space:]]*\?=[[:space:]]*[0-9a-f]{64}[[:space:]]*$$' "$$tmp"); \
+	if [ "$$assignments" != 1 ] || [ "$$literal" != 1 ]; then \
+		$(ERROR) "downloaded GOMAKE_SHA256 must be exactly one literal 64-hex assignment"; \
 		exit 1; \
 	fi; \
-	if [ -z "$(GOMAKE_SHA256)" ] && [ "$(GOMAKE_ALLOW_UNVERIFIED)" != "1" ]; then \
+	embedded=$$(sed -nE 's/^GOMAKE_SHA256[[:space:]]*\?=[[:space:]]*//p' "$$tmp"); \
+	command -v "$(SHA256_BIN)" >/dev/null 2>&1 || { $(ERROR) "no SHA-256 tool found (need sha256sum or shasum)"; exit 1; }; \
+	actual=$$($(DIGEST_FILTER) "$$tmp" | $(SHA256) | awk '{print $$1}'); \
+	case "$$actual" in ''|*[!0-9a-f]*) $(ERROR) "could not compute the filtered SHA-256 of the download"; exit 1;; esac; \
+	if [ $${#actual} -ne 64 ]; then $(ERROR) "computed filtered digest is not a 64-character SHA-256"; exit 1; fi; \
+	if [ "$$embedded" != "$$actual" ]; then \
+		$(ERROR) "downloaded pin does not match its own filtered digest"; \
+		$(ERROR) "embedded $$embedded"; \
+		$(ERROR) "computed $$actual"; \
+		exit 1; \
+	fi; \
+	if [ -n "$$GOMAKE_SHA256" ]; then \
+		case "$$GOMAKE_SHA256" in *[!0-9a-f]*) $(ERROR) "GOMAKE_SHA256 is not a literal SHA-256 digest"; exit 1;; esac; \
+		if [ $${#GOMAKE_SHA256} -ne 64 ]; then $(ERROR) "GOMAKE_SHA256 must be a 64-character SHA-256 digest"; exit 1; fi; \
+		if [ "$$actual" != "$$GOMAKE_SHA256" ]; then \
+			$(ERROR) "checksum mismatch for $$GOMAKE_REPO@$$GOMAKE_REF (filtered digest, excluding the GOMAKE_SHA256 line)"; \
+			$(ERROR) "expected $$GOMAKE_SHA256"; \
+			$(ERROR) "got      $$actual"; \
+			exit 1; \
+		fi; \
+	elif [ "$$GOMAKE_ALLOW_UNVERIFIED" != "1" ]; then \
 		$(WARN) "GOMAKE_SHA256 is not pinned; refusing unverified update."; \
-		$(INFO) "sha256: $$actual"; \
+		$(INFO) "filtered sha256: $$actual"; \
 		$(INFO) "re-run as: make self-update GOMAKE_SHA256=$$actual"; \
 		$(INFO) "or, at your own risk: make self-update GOMAKE_ALLOW_UNVERIFIED=1"; \
 		exit 1; \
@@ -458,10 +491,11 @@ self-update: ## Update GoMake from the pinned upstream revision
 		exit 0; \
 	fi; \
 	mv "$$tmp" "$(SELF_FILE)"; \
-	$(SUCCESS) "Updated $(SELF_FILE) from $(GOMAKE_REPO)@$(GOMAKE_REF)."
+	$(SUCCESS) "Updated $(SELF_FILE) from $$GOMAKE_REPO@$$GOMAKE_REF (filtered digest verified)."
 
 .PHONY: self-checksum
-self-checksum: ## Print the checksum to pin as GOMAKE_SHA256
+self-checksum: ## Print the filtered checksum to pin as GOMAKE_SHA256
+	@command -v "$(SHA256_BIN)" >/dev/null 2>&1 || { $(ERROR) "no SHA-256 tool found (need sha256sum or shasum)"; exit 1; }
 	@$(DIGEST_FILTER) "$(SELF_FILE)" | $(SHA256) | awk '{print $$1}'
 
 # =============================================================================

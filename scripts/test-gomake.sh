@@ -159,6 +159,17 @@ filtered_digest() { # digest of a Makefile excluding its GOMAKE_SHA256 assignmen
 
 has() { grep -qF -- "$2" "$1"; }
 
+rewrite_pin() { # <file> <digest> : replace the GOMAKE_SHA256 assignment value
+  sed -E "s/^GOMAKE_SHA256[[:space:]]*\\?=.*/GOMAKE_SHA256 ?= $2/" "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+make_selfconsistent() { # <file> : pin the file to its own filtered digest; print the digest
+  local f=$1 dig
+  dig=$(filtered_digest "$f")
+  rewrite_pin "$f" "$dig"
+  printf '%s' "$dig"
+}
+
 # ---------------------------------------------------------------------------
 # Tests. Each prints a reason and returns 1 on failure.
 # ---------------------------------------------------------------------------
@@ -184,6 +195,13 @@ TESTS=(
   bin_dir_override
   self_update_verify_ok
   self_update_mismatch
+  updater_rejects_expression
+  updater_rejects_duplicate
+  updater_rejects_forged_pin
+  updater_rejects_branch_ref
+  updater_missing_hash_tool
+  updater_download_failure
+  updater_rejects_caller_pin
   report_requires_tools
 )
 
@@ -388,29 +406,109 @@ t_bin_dir_override() {
   return 0
 }
 
-t_self_update_verify_ok() { # regression #15
-  local d="$WORK/upd"
-  make_module "$d"
-  cp "$d/Makefile" "$WORK/staged"
-  export STUB_CURL_SRC="$WORK/staged"
+t_self_update_verify_ok() { # regression #15 / P01
+  local d="$WORK/upd"; make_module "$d"
+  local dig; dig=$(make_selfconsistent "$d/Makefile")
+  cp "$d/Makefile" "$WORK/staged"; export STUB_CURL_SRC="$WORK/staged"
   USE_STUBS=1
-  run_make "$d" "$WORK/out" self-update GOMAKE_REF=staged
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig"
+  [ "$MAKE_RC" = 0 ] || { log "  exit $MAKE_RC"; return 1; }
   has "$WORK/out" "already up to date" || { log "  expected 'already up to date'"; return 1; }
   return 0
 }
 
-t_self_update_mismatch() { # regression #15
-  local d="$WORK/updbad"
-  make_module "$d"
-  cp "$d/Makefile" "$WORK/staged2"
-  export STUB_CURL_SRC="$WORK/staged2"
+t_self_update_mismatch() { # regression #15 / P01
+  local d="$WORK/updbad"; make_module "$d"
+  make_selfconsistent "$d/Makefile" >/dev/null
+  cp "$d/Makefile" "$WORK/staged2"; export STUB_CURL_SRC="$WORK/staged2"
   local before; before=$(hash_file "$d/Makefile")
   USE_STUBS=1
-  run_make "$d" "$WORK/out" self-update GOMAKE_REF=staged \
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 \
     GOMAKE_SHA256=0000000000000000000000000000000000000000000000000000000000000000
   [ "$MAKE_RC" != 0 ] || { log "  mismatched checksum should fail"; return 1; }
   has "$WORK/out" "checksum mismatch" || { log "  missing checksum mismatch message"; return 1; }
   [ "$(hash_file "$d/Makefile")" = "$before" ] || { log "  Makefile changed on failed update"; return 1; }
+  return 0
+}
+
+t_updater_rejects_expression() { # P01
+  local d="$WORK/updexpr"; make_module "$d"
+  local dig; dig=$(filtered_digest "$d/Makefile")
+  cp "$d/Makefile" "$WORK/staged"
+  sed -E 's/^GOMAKE_SHA256.*/GOMAKE_SHA256 ?= $(shell echo pwned)/' "$WORK/staged" > "$WORK/staged.new"
+  mv "$WORK/staged.new" "$WORK/staged"
+  export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig"
+  [ "$MAKE_RC" != 0 ] || { log "  Make-expression pin should be rejected"; return 1; }
+  has "$WORK/out" "must be exactly one literal" || { log "  missing structural rejection"; return 1; }
+  return 0
+}
+
+t_updater_rejects_duplicate() { # P01
+  local d="$WORK/upddup"; make_module "$d"
+  local dig; dig=$(filtered_digest "$d/Makefile")
+  cp "$d/Makefile" "$WORK/staged"
+  printf 'GOMAKE_SHA256 ?= %s\n' "$dig" >> "$WORK/staged"
+  export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig"
+  [ "$MAKE_RC" != 0 ] || { log "  duplicate pin should be rejected"; return 1; }
+  has "$WORK/out" "must be exactly one literal" || { log "  missing duplicate rejection"; return 1; }
+  return 0
+}
+
+t_updater_rejects_forged_pin() { # P01
+  local d="$WORK/updforge"; make_module "$d"
+  cp "$d/Makefile" "$WORK/staged"   # embedded pin is the repo's, not the staged file's own digest
+  local dig; dig=$(filtered_digest "$WORK/staged")
+  export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig"
+  [ "$MAKE_RC" != 0 ] || { log "  forged embedded pin should be rejected"; return 1; }
+  has "$WORK/out" "does not match its own filtered digest" || { log "  missing self-consistency error"; return 1; }
+  return 0
+}
+
+t_updater_rejects_branch_ref() { # P01
+  local d="$WORK/updbranch"; make_module "$d"
+  local dig; dig=$(make_selfconsistent "$d/Makefile")
+  cp "$d/Makefile" "$WORK/staged"; export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=main GOMAKE_SHA256="$dig"
+  [ "$MAKE_RC" != 0 ] || { log "  branch ref should be rejected"; return 1; }
+  has "$WORK/out" "moving branch" || { log "  missing branch-ref message"; return 1; }
+  return 0
+}
+
+t_updater_missing_hash_tool() { # P01
+  local d="$WORK/updhash"; make_module "$d"
+  local dig; dig=$(make_selfconsistent "$d/Makefile")
+  cp "$d/Makefile" "$WORK/staged"; export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig" SHA256="$WORK/no-such-hash"
+  [ "$MAKE_RC" != 0 ] || { log "  missing hash tool should fail"; return 1; }
+  has "$WORK/out" "no SHA-256 tool" || { log "  missing hash-tool message"; return 1; }
+  return 0
+}
+
+t_updater_download_failure() { # P01
+  local d="$WORK/updfail"; make_module "$d"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9
+  [ "$MAKE_RC" != 0 ] || { log "  download failure should fail"; return 1; }
+  has "$WORK/out" "download failed" || { log "  missing download-failure message"; return 1; }
+  return 0
+}
+
+t_updater_rejects_caller_pin() { # P01
+  local d="$WORK/updpin"; make_module "$d"
+  make_selfconsistent "$d/Makefile" >/dev/null
+  cp "$d/Makefile" "$WORK/staged"; export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256=not-a-digest
+  [ "$MAKE_RC" != 0 ] || { log "  invalid caller pin should fail"; return 1; }
+  has "$WORK/out" "not a literal SHA-256" || { log "  missing invalid-pin message"; return 1; }
   return 0
 }
 
