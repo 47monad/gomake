@@ -29,6 +29,9 @@ generated inside each temp directory for the command/failure assertions.
   service Makefiles, no services, unknown services.
 - **Behaviour:** parallel and serial builds, shared `go generate` (runs once),
   `BIN_DIR` override, updater verification and mismatch, report tool checks.
+- **Tools:** an install failure stops `make tools` immediately, installs land in
+  `GOBIN` (default and override), a second run is a no-op, and an existing custom
+  tool path is not overwritten.
 - **Updater hardening:** tampered pins (expression/duplicate/forged), moving-branch
   refs, missing hash tool, download failure, invalid caller pin, self-file binding
   across `include`s, permission preservation, staging failure, and symlinks.

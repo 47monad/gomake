@@ -99,7 +99,15 @@ case "$cmd" in
       for p in ${STUB_PACKAGES:-example.com/fixture}; do echo "$p"; done
     fi ;;
   version) echo "go version go1.99-fake ${STUB_GOOS:-linux}/${STUB_GOARCH:-amd64}" ;;
-  install)  [ "${STUB_GO_INSTALL_FAIL:-0}" = 1 ] && { echo "fake go: install failed" >&2; exit 1; } ;;
+  install)
+    [ "${STUB_GO_INSTALL_FAIL:-0}" = 1 ] && { echo "fake go: install failed" >&2; exit 1; }
+    pkg=""
+    for a in "$@"; do case "$a" in *@*) pkg="${a%@*}";; esac; done
+    if [ -n "$pkg" ] && [ -n "${GOBIN:-}" ]; then
+      mkdir -p "$GOBIN"
+      : > "$GOBIN/${pkg##*/}"
+      chmod +x "$GOBIN/${pkg##*/}"
+    fi ;;
   generate) [ "${STUB_GO_GENERATE_FAIL:-0}" = 1 ] && { echo "fake go: generate failed" >&2; exit 1; } ;;
   build|test) [ "${STUB_GO_BUILD_FAIL:-0}" = 1 ] && { echo "fake go: build failed" >&2; exit 1; } ;;
 esac
@@ -222,6 +230,11 @@ TESTS=(
   updater_preserves_permissions
   updater_staging_failure_visible
   updater_symlink_target_untouched
+  tools_failure_fails_target
+  tools_success_installs
+  tools_honors_gobin_override
+  tools_skips_installed
+  tools_respects_custom_tool
   report_requires_tools
 )
 
@@ -594,6 +607,72 @@ t_updater_symlink_target_untouched() { # P02
   [ "$(hash_file "$WORK/real")" = "$before" ] || { log "  symlink target was modified"; return 1; }
   has "$d/Makefile" "sym-marker" || { log "  the target path was not replaced"; return 1; }
   if [ -L "$d/Makefile" ]; then log "  symlink should have been replaced by a regular file"; return 1; fi
+  return 0
+}
+
+t_tools_failure_fails_target() { # P03
+  local d="$WORK/toolsfail"; make_module "$d"
+  export STUB_GO_INSTALL_FAIL=1
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" tools
+  [ "$MAKE_RC" != 0 ] || { log "  tools should fail when an install fails"; return 1; }
+  has "$WORK/out" "failed to install golangci-lint" || { log "  missing install-failure message"; return 1; }
+  not_has "$WORK/out" "Tools installed" || { log "  printed overall success"; return 1; }
+  local n; n=$(grep -c 'install ' "$STUB_LOG" || true)
+  [ "$n" = 1 ] || { log "  expected 1 install attempt before abort, saw $n"; return 1; }
+  return 0
+}
+
+t_tools_success_installs() { # P03
+  local d="$WORK/toolsok"; make_module "$d"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" tools
+  [ "$MAKE_RC" = 0 ] || { log "  tools exited $MAKE_RC"; return 1; }
+  has "$WORK/out" "Tools installed" || { log "  missing success message"; return 1; }
+  local t
+  for t in golangci-lint gofumpt govulncheck; do
+    [ -x "$STUB_GOPATH/bin/$t" ] || { log "  $t not installed to GOBIN ($STUB_GOPATH/bin)"; return 1; }
+  done
+  return 0
+}
+
+t_tools_honors_gobin_override() { # P03
+  local d="$WORK/toolsgobin"; make_module "$d"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" tools GOBIN="$WORK/custombin"
+  [ "$MAKE_RC" = 0 ] || { log "  tools exited $MAKE_RC"; return 1; }
+  local t
+  for t in golangci-lint gofumpt govulncheck; do
+    [ -x "$WORK/custombin/$t" ] || { log "  $t not installed to the explicit GOBIN"; return 1; }
+  done
+  return 0
+}
+
+t_tools_skips_installed() { # P03
+  local d="$WORK/toolsskip"; make_module "$d"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" tools
+  local first; first=$(grep -c 'install ' "$STUB_LOG" || true)
+  run_make "$d" "$WORK/out2" tools
+  local second; second=$(grep -c 'install ' "$STUB_LOG" || true)
+  [ "$first" = 3 ] || { log "  expected 3 installs, saw $first"; return 1; }
+  [ "$second" = 3 ] || { log "  second run re-installed (saw $second)"; return 1; }
+  return 0
+}
+
+t_tools_respects_custom_tool() { # P03
+  local d="$WORK/toolscustom"; make_module "$d"
+  mkdir -p "$WORK/custom"
+  printf '#!/bin/sh\necho custom\n' > "$WORK/custom/golangci-lint"
+  chmod +x "$WORK/custom/golangci-lint"
+  local before; before=$(hash_file "$WORK/custom/golangci-lint")
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" tools GOLANGCI_LINT="$WORK/custom/golangci-lint"
+  [ "$MAKE_RC" = 0 ] || { log "  tools exited $MAKE_RC"; return 1; }
+  [ "$(hash_file "$WORK/custom/golangci-lint")" = "$before" ] || { log "  custom tool was overwritten"; return 1; }
+  local n; n=$(grep -c 'install ' "$STUB_LOG" || true)
+  [ "$n" = 2 ] || { log "  expected 2 installs, saw $n"; return 1; }
+  if grep -q 'golangci-lint@' "$STUB_LOG"; then log "  golangci-lint installed despite a custom executable"; return 1; fi
   return 0
 }
 
