@@ -247,7 +247,7 @@ coverage: ## Run tests with coverage
 	$(GO) tool cover -html=$(COVERAGE_OUT) -o $(COVERAGE_HTML)
 	@coverage=$$(go tool cover -func=$(COVERAGE_OUT) | grep total | awk '{print $$3}' | sed 's/%//'); \
 	if [ "$${coverage%.*}" -lt "$(COVERAGE_THRESHOLD)" ]; then \
-		$(NERROR) "Coverage $${coverage}%% is below threshold $(COVERAGE_THRESHOLD)%%"; \
+		$(ERROR) "Coverage $${coverage}% is below threshold $(COVERAGE_THRESHOLD)%"; \
 		exit 1; \
 	fi
 	@$(SUCCESS) "Coverage report generated: $(COVERAGE_HTML)"
