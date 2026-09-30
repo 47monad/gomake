@@ -190,7 +190,7 @@ build: $(BIN_DIR) ## Build all services
 	@$(SUCCESS) "Build complete!"
 
 .PHONY: build-% 
-build-%: generate ## Build a single service (% = service name)
+build-%: generate | $(BIN_DIR) ## Build a single service (% = service name)
 	@$(INFO) "Building $*..."
 	@if [ -f "$(BIN_DIR)/$*" ]; then \
 		rm "$(BIN_DIR)/$*"; \
