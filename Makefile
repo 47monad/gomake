@@ -22,7 +22,11 @@ SELF_FILE=$(lastword $(MAKEFILE_LIST))
 # 🎯 Project Configuration
 # =============================================================================
 # Project Settings
-PROJECT_NAME ?= $(shell basename $(CURDIR) | sed -E 's/[-_]/ /g; s/^(.)/\U\1/g')
+#
+# Capitalize the first letter and turn -/_ separators into spaces. This is done
+# with awk rather than `sed -E 's/^(.)/\U\1/'`, because the \U escape is a GNU
+# extension that BSD/macOS sed does not support.
+PROJECT_NAME ?= $(shell basename "$(CURDIR)" | awk '{ gsub(/[-_]/, " "); print toupper(substr($$0,1,1)) substr($$0,2) }')
 ORGANIZATION ?= 47monad
 DESCRIPTION ?= $(PROJECT_NAME) Project
 DISCLAIMER = "47monad | All rights reserved"
