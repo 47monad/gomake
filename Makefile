@@ -42,6 +42,12 @@ SERVICES ?= $(SERVICE_DIRS) $(FLAT_SERVICE)
 SERVICE_PATH = $(if $(filter $(FLAT_SERVICE),$*),cmd,cmd/$*)
 SERVICE_TARGETS = $(addprefix build-,$(SERVICES))
 
+# Shell snippet used by the service-scoped targets: fail with a friendly message
+# when $* is not one of SERVICES, so a typo fails fast instead of triggering a
+# build. It is expanded inside the recipe, which is the only point guaranteed to
+# run before the build commands (GNU make does not guarantee prerequisite order).
+require_service = if ! echo "$(SERVICES)" | grep -wq "$*"; then $(ERROR) "'$*' is not a valid service."; exit 1; fi
+
 # Build Settings
 # BUILD_SYSTEM: local, ci
 BUILD_SYSTEM ?= local
@@ -199,6 +205,7 @@ build: $(BIN_DIR) ## Build all services
 
 .PHONY: build-% 
 build-%: generate | $(BIN_DIR) ## Build a single service (% = service name)
+	@$(require_service)
 	@$(INFO) "Building $*..."
 	@if [ -f "$(BIN_DIR)/$*" ]; then \
 		rm "$(BIN_DIR)/$*"; \
@@ -318,19 +325,17 @@ deps-verify: ## Verify dependencies
 # =============================================================================
 .PHONY: dev-%
 dev-%: deps bake-% generate ## Start development environment (% = service name)
+	@$(require_service)
 	@$(INFO) "Starting $* development environment..."
 	@$(ROCKET) "Running $*..."
 	$(GO) run ./$(SERVICE_PATH)/main.go
 
 .PHONY: run-%
-run-%: bake-% build-% ## Run the application (% = service name)
-	@if echo "$(SERVICES)" | grep -wq "$*"; then \
-		$(ROCKET) "Running $*..."; \
-		$(BIN_DIR)/$*; \
-	else \
-		$(ERROR) "'$*' is not a valid service."; \
-		exit 1; \
-	fi
+run-%: ## Run the application (% = service name)
+	@$(require_service)
+	+@$(MAKE) bake-$* build-$*
+	@$(ROCKET) "Running $*..."
+	@$(BIN_DIR)/$*
 
 .PHONY: generate
 generate: ## Run code generation
