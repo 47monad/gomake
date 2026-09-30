@@ -3,6 +3,11 @@
 # =============================================================================
 # ⚙️ Makefile Configuration
 # =============================================================================
+# Bind the template's own path when it is read. Using := (not =) means a wrapper
+# that includes Gomake and then includes other files cannot redirect self-update
+# or self-checksum to a later file.
+SELF_FILE := $(lastword $(MAKEFILE_LIST))
+
 # Self-update source.
 #
 # GOMAKE_REF must be an immutable revision (a tag or a full commit SHA), never a
@@ -25,7 +30,7 @@ GOMAKE_REF ?= $(GOMAKE_VERSION)
 GOMAKE_SHA256 ?= 3ba8c859ba266c07e6ec01aea289276fce2cf08bbd7b3d88f12771d27f7faa25
 GOMAKE_ALLOW_UNVERIFIED ?= 0
 # Exported so the recipe reads them as data, never interpolated into shell code.
-export GOMAKE_REPO GOMAKE_REF GOMAKE_SHA256 GOMAKE_ALLOW_UNVERIFIED
+export GOMAKE_REPO GOMAKE_REF GOMAKE_SHA256 GOMAKE_ALLOW_UNVERIFIED SELF_FILE
 
 # SHA-256 command: sha256sum on GNU/Linux, shasum on macOS.
 SHA256 ?= $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
@@ -34,7 +39,6 @@ SHA256_BIN = $(firstword $(SHA256))
 # Hash everything except the GOMAKE_SHA256 assignment, so the pin can cover the
 # file that contains it (see the note above).
 DIGEST_FILTER = sed '/^GOMAKE_SHA256[[:space:]]*[?]*=/d'
-SELF_FILE=$(lastword $(MAKEFILE_LIST))
 
 # =============================================================================
 # 🎯 Project Configuration
@@ -439,9 +443,8 @@ $(BIN_DIR) $(DIST_DIR) $(DOCS_DIR):
 # =============================================================================
 .PHONY: self-update
 self-update: ## Update GoMake from the pinned upstream revision
-	@echo "Updating $(SELF_FILE) from $$GOMAKE_REPO@$$GOMAKE_REF..."
-	@tmp=$$(mktemp "$${TMPDIR:-/tmp}/gomake.XXXXXX") || exit 1; \
-	trap 'rm -f "$$tmp"' EXIT; \
+	@echo "Updating $$SELF_FILE from $$GOMAKE_REPO@$$GOMAKE_REF..."
+	@dest="$$SELF_FILE"; \
 	case "$$GOMAKE_REF" in \
 		"") $(ERROR) "GOMAKE_REF is empty"; exit 1;; \
 		*[!A-Za-z0-9._/-]*) $(ERROR) "GOMAKE_REF '$$GOMAKE_REF' contains unsupported characters"; exit 1;; \
@@ -449,6 +452,11 @@ self-update: ## Update GoMake from the pinned upstream revision
 			$(ERROR) "GOMAKE_REF '$$GOMAKE_REF' looks like a moving branch; pin a tag or a full commit SHA"; \
 			exit 1;; \
 	esac; \
+	stage_dir=$$(dirname "$$dest"); \
+	[ -d "$$stage_dir" ] || { $(ERROR) "staging directory '$$stage_dir' does not exist"; exit 1; }; \
+	tmp=$$(mktemp "$$dest.XXXXXX") || { $(ERROR) "could not create a staging file next to '$$dest'"; exit 1; }; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	trap 'rm -f "$$tmp"; exit 130' INT TERM; \
 	url="https://raw.githubusercontent.com/$$GOMAKE_REPO/$$GOMAKE_REF/Makefile"; \
 	curl --proto '=https' --tlsv1.2 -sSfL "$$url" -o "$$tmp" || { $(ERROR) "download failed: $$url"; exit 1; }; \
 	if [ ! -s "$$tmp" ]; then $(ERROR) "downloaded file is empty"; exit 1; fi; \
@@ -486,17 +494,23 @@ self-update: ## Update GoMake from the pinned upstream revision
 		$(INFO) "or, at your own risk: make self-update GOMAKE_ALLOW_UNVERIFIED=1"; \
 		exit 1; \
 	fi; \
-	if cmp -s "$$tmp" "$(SELF_FILE)"; then \
-		$(SUCCESS) "$(SELF_FILE) is already up to date."; \
+	mode=""; \
+	if [ -e "$$dest" ]; then \
+		mode=$$(stat -c '%a' "$$dest" 2>/dev/null || stat -f '%Lp' "$$dest" 2>/dev/null); \
+		[ -n "$$mode" ] || { $(ERROR) "could not read the permissions of '$$dest'"; exit 1; }; \
+		chmod "$$mode" "$$tmp" || { $(ERROR) "could not preserve the permissions of '$$dest'"; exit 1; }; \
+	fi; \
+	if cmp -s "$$tmp" "$$dest"; then \
+		$(SUCCESS) "$$dest is already up to date."; \
 		exit 0; \
 	fi; \
-	mv "$$tmp" "$(SELF_FILE)"; \
-	$(SUCCESS) "Updated $(SELF_FILE) from $$GOMAKE_REPO@$$GOMAKE_REF (filtered digest verified)."
+	mv "$$tmp" "$$dest" || { $(ERROR) "failed to replace '$$dest'"; exit 1; }; \
+	$(SUCCESS) "Updated $$dest from $$GOMAKE_REPO@$$GOMAKE_REF (filtered digest verified)."
 
 .PHONY: self-checksum
 self-checksum: ## Print the filtered checksum to pin as GOMAKE_SHA256
 	@command -v "$(SHA256_BIN)" >/dev/null 2>&1 || { $(ERROR) "no SHA-256 tool found (need sha256sum or shasum)"; exit 1; }
-	@$(DIGEST_FILTER) "$(SELF_FILE)" | $(SHA256) | awk '{print $$1}'
+	@$(DIGEST_FILTER) "$$SELF_FILE" | $(SHA256) | awk '{print $$1}'
 
 # =============================================================================
 ##@ 💡 Help

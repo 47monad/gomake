@@ -134,8 +134,17 @@ value, or a forged pin is rejected before anything is replaced.
 `GOMAKE_ALLOW_UNVERIFIED=1` only waives the caller-side pin; it never skips that
 structural check.
 
-The download is written to a temporary file, validated, and only then renamed
-over the current Makefile, so a failed check never leaves a corrupted file behind.
+The updater targets the file that contains this Makefile, captured when it is
+read, so a wrapper that includes Gomake and then includes other files cannot
+redirect the update. The download is staged next to the destination (same
+filesystem) and renamed over it, so the replacement is atomic and a failed check
+leaves the existing file untouched. The destination's permissions are preserved,
+and a failed download, validation, or rename fails the target without printing
+success.
+
+If the target path is a symlink, the link is replaced by the downloaded file and
+its target is left untouched; update the real file directly if you need
+otherwise.
 
 To cut a release: bump `GOMAKE_VERSION`, run `make self-checksum`, set
 `GOMAKE_SHA256` to its output, commit, and tag that commit (e.g. `v0.1.0`).
