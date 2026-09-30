@@ -80,8 +80,9 @@ make bake-<svc>  # Prepare a service's config
 make generate    # Run go generate ./...
 ```
 
-`run-<svc>` and `dev-<svc>` reject an unknown service name before doing any
-build or generation work, so a typo fails fast with a clear message.
+`build-<svc>`, `run-<svc>` and `dev-<svc>` compare the name against the
+configured services **exactly** (no substring or regex matching) and reject an
+unknown one before running any Go, dependency download, generation, or bake step.
 
 ### Tools & Utilities
 

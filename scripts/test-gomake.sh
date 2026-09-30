@@ -215,6 +215,8 @@ TESTS=(
   no_services_error
   unknown_service_run_fast
   unknown_service_build_fast
+  unknown_service_dev_fast
+  service_membership_exact
   generate_once_parallel
   bin_dir_override
   self_update_verify_ok
@@ -393,7 +395,7 @@ t_no_services_error() {
   return 0
 }
 
-t_unknown_service_run_fast() { # regression #7
+t_unknown_service_run_fast() { # regression #7 / P04
   local d="$WORK/unknown"
   make_module "$d"
   mkdir -p "$d/cmd/foo"; write_main "$d/cmd/foo/main.go"
@@ -401,11 +403,11 @@ t_unknown_service_run_fast() { # regression #7
   run_make "$d" "$WORK/out" run-bar
   [ "$MAKE_RC" != 0 ] || { log "  run-bar should fail"; return 1; }
   has "$WORK/out" "'bar' is not a valid service" || { log "  missing friendly unknown-service error"; return 1; }
-  if grep -q '^go build' "$STUB_LOG"; then log "  unknown service triggered a build"; return 1; fi
+  if grep -qE '^go (build|generate|mod|run)' "$STUB_LOG"; then log "  unknown run triggered go/generate/deps"; return 1; fi
   return 0
 }
 
-t_unknown_service_build_fast() {
+t_unknown_service_build_fast() { # P04
   local d="$WORK/unknown2"
   make_module "$d"
   mkdir -p "$d/cmd/foo"; write_main "$d/cmd/foo/main.go"
@@ -413,6 +415,36 @@ t_unknown_service_build_fast() {
   run_make "$d" "$WORK/out" build-bar
   [ "$MAKE_RC" != 0 ] || { log "  build-bar should fail"; return 1; }
   has "$WORK/out" "'bar' is not a valid service" || { log "  missing friendly error"; return 1; }
+  if grep -qE '^go (build|generate|mod)' "$STUB_LOG"; then log "  unknown build ran generation or a build"; return 1; fi
+  return 0
+}
+
+t_unknown_service_dev_fast() { # P04
+  local d="$WORK/unknown3"
+  make_module "$d"
+  mkdir -p "$d/cmd/foo"; write_main "$d/cmd/foo/main.go"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" dev-bar
+  [ "$MAKE_RC" != 0 ] || { log "  dev-bar should fail"; return 1; }
+  has "$WORK/out" "'bar' is not a valid service" || { log "  missing friendly error"; return 1; }
+  if grep -qE '^go (build|generate|mod|run)' "$STUB_LOG"; then log "  unknown dev ran deps/generation/run"; return 1; fi
+  return 0
+}
+
+t_service_membership_exact() { # P04
+  local d="$WORK/membership"; make_module "$d"
+  mkdir -p "$d/cmd/api-worker"; write_main "$d/cmd/api-worker/main.go"
+  USE_STUBS=1
+  # a prefix of an existing service must not be accepted
+  run_make "$d" "$WORK/out" build-api
+  [ "$MAKE_RC" != 0 ] || { log "  'api' was accepted while only 'api-worker' exists"; return 1; }
+  if grep -qE '^go (build|generate|mod)' "$STUB_LOG"; then log "  rejected name still ran generation/Go"; return 1; fi
+  # regex punctuation must not match a different name
+  run_make "$d" "$WORK/out2" build-a.pi
+  [ "$MAKE_RC" != 0 ] || { log "  'a.pi' matched via regex"; return 1; }
+  # the exact configured name still works
+  run_make "$d" "$WORK/out3" build-api-worker
+  [ "$MAKE_RC" = 0 ] || { log "  exact service name was rejected ($MAKE_RC)"; return 1; }
   return 0
 }
 

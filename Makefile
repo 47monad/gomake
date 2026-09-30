@@ -63,11 +63,12 @@ SERVICES ?= $(SERVICE_DIRS) $(FLAT_SERVICE)
 SERVICE_PATH = $(if $(filter $(FLAT_SERVICE),$*),cmd,cmd/$*)
 SERVICE_TARGETS = $(addprefix build-,$(SERVICES))
 
-# Shell snippet used by the service-scoped targets: fail with a friendly message
-# when $* is not one of SERVICES, so a typo fails fast instead of triggering a
-# build. It is expanded inside the recipe, which is the only point guaranteed to
-# run before the build commands (GNU make does not guarantee prerequisite order).
-require_service = if ! echo "$(SERVICES)" | grep -wq "$*"; then $(ERROR) "'$*' is not a valid service."; exit 1; fi
+# Shell snippet used by the service-scoped recipes: fail with a friendly message
+# unless $* is exactly one of the configured SERVICES (literal comparison, no
+# regex or substring matching). Unknown names have no lifecycle prerequisites
+# (see the Core Build System section), so this runs before any go/deps/generate/
+# bake work.
+require_service = found=0; for s in $(SERVICES); do [ "$$s" = "$*" ] && found=1; done; [ "$$found" = 1 ] || { $(ERROR) "'$*' is not a valid service."; exit 1; }
 
 # Build Settings
 # BUILD_SYSTEM: local, ci
@@ -212,6 +213,12 @@ TRASH := printf "$(YELLOW)🗑️  $(RESET)%s \n"
 # =============================================================================
 ##@ 🎯 Core Build System
 # =============================================================================
+# Attach the lifecycle prerequisites (generation, dependency prep, hooks, output
+# directory) only to configured services. An unknown service name therefore has
+# no prerequisites, so it fails in the recipe below before any of that work runs.
+$(foreach svc,$(SERVICES),$(eval build-$(svc): generate | $(BIN_DIR)))
+$(foreach svc,$(SERVICES),$(eval dev-$(svc): deps bake-$(svc) generate))
+
 .PHONY: build
 build: $(BIN_DIR) ## Build all services
 	@$(WORKING) "Building project..."
@@ -223,7 +230,7 @@ build: $(BIN_DIR) ## Build all services
 	@$(SUCCESS) "Build complete!"
 
 .PHONY: build-% 
-build-%: generate | $(BIN_DIR) ## Build a single service (% = service name)
+build-%: ## Build a single service (% = service name)
 	@$(require_service)
 	@$(INFO) "Building $*..."
 	@if [ -f "$(BIN_DIR)/$*" ]; then \
@@ -345,7 +352,7 @@ deps-verify: ## Verify dependencies
 ##@ 🔄 Development Workflow
 # =============================================================================
 .PHONY: dev-%
-dev-%: deps bake-% generate ## Start development environment (% = service name)
+dev-%: ## Start development environment (% = service name)
 	@$(require_service)
 	@$(INFO) "Starting $* development environment..."
 	@$(ROCKET) "Running $*..."
