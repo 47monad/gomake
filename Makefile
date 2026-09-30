@@ -378,9 +378,15 @@ version: ## Display version information
 # =============================================================================
 ##@ 📊 Reporting & Analytics
 # =============================================================================
+# Expand with $(call require_tool,<path-or-name>) to fail with an actionable
+# message when a required external tool is not installed.
+require_tool = if [ ! -x "$(1)" ] && ! command -v "$(1)" >/dev/null 2>&1; then $(ERROR) "required tool '$(1)' is not installed; run 'make tools'"; exit 1; fi
+
 .PHONY: report
 report: ## Generate project reports
 	@$(INFO) "Generating project reports..."
+	@$(call require_tool,$(GOLANGCI_LINT))
+	@$(call require_tool,$(GOVULNCHECK))
 	@mkdir -p $(DOCS_DIR)/reports
 	@$(MAKE) coverage
 	@$(MAKE) benchmark-report
@@ -394,12 +400,15 @@ benchmark-report:
 
 .PHONY: lint-report
 lint-report:
+	@$(call require_tool,$(GOLANGCI_LINT))
 	@mkdir -p "$(DOCS_DIR)/reports"
 	$(GOLANGCI_LINT) run --output.checkstyle.path="$(DOCS_DIR)/reports/lint-checkstyle.xml"
 
 .PHONY: security-report
 security-report:
-	$(GOVULNCHECK) -json ./... > $(DOCS_DIR)/reports/security.json
+	@$(call require_tool,$(GOVULNCHECK))
+	@mkdir -p "$(DOCS_DIR)/reports"
+	$(GOVULNCHECK) -json ./... > "$(DOCS_DIR)/reports/security.json"
 
 # =============================================================================
 # 📁 Directory Creation
