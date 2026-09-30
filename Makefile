@@ -29,8 +29,8 @@ SELF_FILE=$(lastword $(MAKEFILE_LIST))
 PROJECT_NAME ?= $(shell basename "$(CURDIR)" | awk '{ gsub(/[-_]/, " "); print toupper(substr($$0,1,1)) substr($$0,2) }')
 ORGANIZATION ?= 47monad
 DESCRIPTION ?= $(PROJECT_NAME) Project
-DISCLAIMER = "47monad | All rights reserved"
-MAINTAINER = "47monad"
+DISCLAIMER = 47monad | All rights reserved
+MAINTAINER = 47monad
 
 # Services
 # A service is either a directory under cmd/ (cmd/<name>/main.go or
@@ -467,10 +467,12 @@ help: ## Show this help message
 	@printf "$(WHITE)Maintained by %s$(RESET) \n \n" "$(MAINTAINER)"
 	@printf "$(RED)Service list: $(RESET) %s \n\n" "$(SERVICES)"
 	@printf "$(CYAN)$(BOLD)Available targets:$(RESET) \n"
-	@awk 'BEGIN {FS = ":.*##"; printf ""} \
+	@ml="$(strip $(MAKEFILE_LIST))"; \
+	if [ -f "$$ml" ]; then set -- "$$ml"; else set -- $${ml:-/dev/null}; fi; \
+	awk 'BEGIN {FS = ":.*##"; printf ""} \
 		/^[a-zA-Z_%-]+:.*?##/ { printf "  $(BLUE)* %-20s$(RESET) %s\n", $$1, $$2 } \
-		/^##@/ { printf "\n$(MAGENTA)%s$(RESET)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
-	@printf "\n $(YELLOW)$(BOLD) ** %s ** $(RESET) \n" $(DISCLAIMER)
+		/^##@/ { printf "\n$(MAGENTA)%s$(RESET)\n", substr($$0, 5) } ' "$$@"
+	@printf "\n $(YELLOW)$(BOLD) ** %s ** $(RESET) \n" "$(DISCLAIMER)"
 
 
 .DEFAULT_GOAL := help
