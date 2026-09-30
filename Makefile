@@ -267,11 +267,18 @@ security: ## Run security checks
 ##@ 🧹 Cleanup & Maintenance
 # =============================================================================
 .PHONY: clean
-clean: ## Clean build artifacts
+clean: ## Remove build artifacts and generated reports
 	@$(TRASH) "Cleaning build artifacts..."
-	rm -rf $(BIN_DIR) $(DIST_DIR)
-	$(GO) clean -cache -testcache
+	rm -rf "$(BIN_DIR)" "$(DIST_DIR)"
+	rm -f "$(COVERAGE_OUT)"
+	rm -rf "$(DOCS_DIR)/reports"
 	@$(SUCCESS) "Clean complete!"
+
+.PHONY: clean-all
+clean-all: clean ## Remove build artifacts and the global Go build/test caches
+	@$(TRASH) "Cleaning the global Go build and test caches..."
+	$(GO) clean -cache -testcache
+	@$(SUCCESS) "Full clean complete!"
 
 .PHONY: deps
 deps: ## Install dependencies

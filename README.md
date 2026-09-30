@@ -76,6 +76,17 @@ make run-<svc>   # Run a specific service
 make report      # Generate all reports (coverage, benchmark, lint, security)
 ```
 
+### Cleanup
+
+```sh
+make clean       # Remove build artifacts and generated reports
+make clean-all   # Also clear the global Go build/test caches
+```
+
+`clean` removes `bin/`, `dist/`, `coverage.out` and `docs/reports/`. `clean-all`
+additionally runs `go clean -cache -testcache`, which clears the machine-wide Go
+caches shared by every project on the host, so it is opt-in.
+
 ### Updating Makefile
 
 `self-update` downloads the Makefile from a pinned upstream revision and
