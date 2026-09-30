@@ -3,7 +3,19 @@
 # =============================================================================
 # ⚙️ Makefile Configuration
 # =============================================================================
-REPO_URL=https://raw.githubusercontent.com/47monad/gomake/refs/heads/main/Makefile
+# Self-update source.
+#
+# GOMAKE_REF must be an immutable revision (a full commit SHA or a tag), never a
+# moving branch, and GOMAKE_SHA256 is the expected SHA-256 of Makefile at that
+# revision. `self-update` verifies the digest after downloading and before
+# replacing the local file, so a moved ref or a tampered download cannot inject
+# code. Bump both deliberately when releasing a new version; set
+# GOMAKE_ALLOW_UNVERIFIED=1 only for a one-off update verified by other means.
+GOMAKE_REPO ?= 47monad/gomake
+GOMAKE_REF ?= fceb663695a329d269d00f70bbbec78c2249c714
+GOMAKE_SHA256 ?= d9e8a769fefbfef4319405a950300ddcd3f5dc5d600d661c30dab0702cd3bcda
+GOMAKE_ALLOW_UNVERIFIED ?= 0
+REPO_URL = https://raw.githubusercontent.com/$(GOMAKE_REPO)/$(GOMAKE_REF)/Makefile
 SELF_FILE=$(lastword $(MAKEFILE_LIST))
 
 # =============================================================================
@@ -68,6 +80,13 @@ GOARCH ?= $(shell $(GO) env GOARCH)
 CGO_ENABLED ?= 0
 
 # Tools & Linters
+#
+# Tool versions are pinned so installs are reproducible and cannot silently
+# pick up a breaking or compromised @latest. Bump them deliberately; Go's
+# module checksum database authenticates each downloaded module.
+GOLANGCI_LINT_VERSION ?= v2.14.0
+GOFUMPT_VERSION ?= v0.12.0
+GOVULNCHECK_VERSION ?= v1.8.0
 GOLANGCI_LINT ?= $(GOBIN)/golangci-lint
 GOFUMPT ?= $(GOBIN)/gofumpt
 GODOC ?= $(GOBIN)/godoc
@@ -311,18 +330,18 @@ generate: ## Run code generation
 tools: ## Install all tools
 	@$(INFO) "Preparing installations ..."
 	@if [ ! -f "$(GOLANGCI_LINT)" ]; then \
-		$(INFO) "Installing golangci-lint..."; \
-		$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; \
+		$(INFO) "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."; \
+		$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
 		$(SUCCESS) "golangci-lint was installed successfully"; \
 	fi
 	@if [ ! -f "$(GOFUMPT)" ]; then \
-		$(INFO) "Installing gofumpt..."; \
-		$(GO) install mvdan.cc/gofumpt@latest; \
+		$(INFO) "Installing gofumpt $(GOFUMPT_VERSION)..."; \
+		$(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION); \
 		$(SUCCESS) "gofumpt was installed successfully"; \
 	fi
 	@if [ ! -f "$(GOVULNCHECK)" ]; then \
-		$(INFO) "Installing govulncheck..."; \
-		$(GO) install golang.org/x/vuln/cmd/govulncheck@latest; \
+		$(INFO) "Installing govulncheck $(GOVULNCHECK_VERSION)..."; \
+		$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION); \
 		$(SUCCESS) "govulncheck was installed successfully"; \
 	fi
 	@$(SUCCESS) "Tools installed!"
@@ -376,10 +395,38 @@ $(BIN_DIR) $(DIST_DIR) $(DOCS_DIR):
 # =============================================================================
 ##@ 🔁 Self
 # =============================================================================
-self-update:
-	@echo "Updating $(SELF_FILE)..."
-	@curl -sSfL $(REPO_URL) -o $(SELF_FILE)
-	@echo "Update complete."
+.PHONY: self-update
+self-update: ## Update GoMake from the pinned upstream revision
+	@echo "Updating $(SELF_FILE) from $(GOMAKE_REPO)@$(GOMAKE_REF)..."
+	@tmp=$$(mktemp "$${TMPDIR:-/tmp}/gomake.XXXXXX") || exit 1; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	curl --proto '=https' --tlsv1.2 -sSfL "$(REPO_URL)" -o "$$tmp" || { $(ERROR) "download failed"; exit 1; }; \
+	if [ ! -s "$$tmp" ]; then $(ERROR) "downloaded file is empty"; exit 1; fi; \
+	if ! grep -q '[.]DEFAULT_GOAL' "$$tmp"; then $(ERROR) "downloaded file does not look like GoMake"; exit 1; fi; \
+	if command -v sha256sum >/dev/null 2>&1; then \
+		actual=$$(sha256sum "$$tmp" | awk '{print $$1}'); \
+	else \
+		actual=$$(shasum -a 256 "$$tmp" | awk '{print $$1}'); \
+	fi; \
+	if [ -n "$(GOMAKE_SHA256)" ] && [ "$$actual" != "$(GOMAKE_SHA256)" ]; then \
+		$(ERROR) "checksum mismatch for $(GOMAKE_REPO)@$(GOMAKE_REF)"; \
+		$(ERROR) "expected $(GOMAKE_SHA256)"; \
+		$(ERROR) "got      $$actual"; \
+		exit 1; \
+	fi; \
+	if [ -z "$(GOMAKE_SHA256)" ] && [ "$(GOMAKE_ALLOW_UNVERIFIED)" != "1" ]; then \
+		$(WARN) "GOMAKE_SHA256 is not pinned; refusing unverified update."; \
+		$(INFO) "sha256: $$actual"; \
+		$(INFO) "re-run as: make self-update GOMAKE_SHA256=$$actual"; \
+		$(INFO) "or, at your own risk: make self-update GOMAKE_ALLOW_UNVERIFIED=1"; \
+		exit 1; \
+	fi; \
+	if cmp -s "$$tmp" "$(SELF_FILE)"; then \
+		$(SUCCESS) "$(SELF_FILE) is already up to date."; \
+		exit 0; \
+	fi; \
+	mv "$$tmp" "$(SELF_FILE)"; \
+	$(SUCCESS) "Updated $(SELF_FILE) from $(GOMAKE_REPO)@$(GOMAKE_REF)."
 
 # =============================================================================
 ##@ 💡 Help

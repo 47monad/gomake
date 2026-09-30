@@ -19,7 +19,7 @@ checks for race conditions.
 - 🎨 **Code Quality**: Lints code, formats files, and runs security checks.
 - 🔄 **Dependency Management**: Installs, updates, and verifies dependencies.
 - 📊 **Reporting & Analytics**: Generates benchmark, lint, and security reports.
-- 🔁 **Self-Update**: Fetches the latest Makefile from the repository.
+- 🔁 **Self-Update**: Fetches the Makefile from a pinned upstream revision and verifies its checksum before replacing the local file.
 
 ## Installation
 
@@ -78,9 +78,20 @@ make report      # Generate all reports (coverage, benchmark, lint, security)
 
 ### Updating Makefile
 
+`self-update` downloads the Makefile from a pinned upstream revision and
+verifies its SHA-256 before replacing the local file:
+
 ```sh
-make self-update # Fetch the latest Makefile from the repository
+make self-update                                          # verify against the pinned GOMAKE_SHA256
+make self-update GOMAKE_REF=<rev> GOMAKE_SHA256=<sha256>  # move the pin to a new revision
+make self-update GOMAKE_ALLOW_UNVERIFIED=1                # skip verification (not recommended)
 ```
+
+`GOMAKE_REF` must be an immutable revision (a full commit SHA or a tag), never a
+moving branch, and `GOMAKE_SHA256` is the expected digest of `Makefile` at that
+revision. When releasing a new GoMake version, bump both together. The download
+is written to a temporary file, validated, and only then renamed over the
+current Makefile, so a failed check never leaves a corrupted file behind.
 
 ## Configuration
 
@@ -97,6 +108,14 @@ variables in a different package.
 The module path is read once from `go.mod` via `MODULE_PATH`. When no module is
 present (for example a standalone `go run`), the metadata flags are skipped
 rather than emitting an invalid import path.
+
+### Pinned tool versions
+
+`make tools` installs the exact versions declared by `GOLANGCI_LINT_VERSION`,
+`GOFUMPT_VERSION` and `GOVULNCHECK_VERSION` instead of `@latest`, so installs
+are reproducible and resilient to upstream breaking changes. Override the
+variables to upgrade deliberately; Go's module checksum database authenticates
+each downloaded module.
 
 ## License
 
