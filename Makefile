@@ -27,7 +27,6 @@ SELF_FILE=$(lastword $(MAKEFILE_LIST))
 # with awk rather than `sed -E 's/^(.)/\U\1/'`, because the \U escape is a GNU
 # extension that BSD/macOS sed does not support.
 PROJECT_NAME ?= $(shell basename "$(CURDIR)" | awk '{ gsub(/[-_]/, " "); print toupper(substr($$0,1,1)) substr($$0,2) }')
-ORGANIZATION ?= 47monad
 DESCRIPTION ?= $(PROJECT_NAME) Project
 DISCLAIMER = 47monad | All rights reserved
 MAINTAINER = 47monad
@@ -51,8 +50,6 @@ require_service = if ! echo "$(SERVICES)" | grep -wq "$*"; then $(ERROR) "'$*' i
 # Build Settings
 # BUILD_SYSTEM: local, ci
 BUILD_SYSTEM ?= local
-# CI_SYSTEM: github, gitlab, jenkins
-CI_SYSTEM ?= github
 PARALLEL_JOBS ?= $(shell \
     if command -v nproc >/dev/null 2>&1; then \
         nproc; \
@@ -88,7 +85,6 @@ BUILD_BY ?= $(shell whoami)
 
 # Go Configuration
 GO ?= go
-GOCMD = $(shell which go)
 GOPATH ?= $(shell $(GO) env GOPATH)
 GOBIN ?= $(GOPATH)/bin
 GOOS ?= $(shell $(GO) env GOOS)
@@ -105,17 +101,14 @@ GOFUMPT_VERSION ?= v0.12.0
 GOVULNCHECK_VERSION ?= v1.8.0
 GOLANGCI_LINT ?= $(GOBIN)/golangci-lint
 GOFUMPT ?= $(GOBIN)/gofumpt
-GODOC ?= $(GOBIN)/godoc
 GOVULNCHECK ?= $(GOBIN)/govulncheck
 MOCKERY ?= mockery
 
 # Directories
 ROOT_DIR ?= $(shell pwd)
-CMD_DIR ?= $(ROOT_DIR)/cmd
 BIN_DIR ?= $(ROOT_DIR)/bin
 DIST_DIR ?= $(ROOT_DIR)/dist
 DOCS_DIR ?= $(ROOT_DIR)/docs
-CONFIG_DIR ?= $(ROOT_DIR)/config
 
 # Build Configuration
 BUILD_TAGS ?= 
@@ -185,9 +178,7 @@ SUCCESS := printf "$(GREEN)✅ $(RESET)%s \n"
 WARN := printf "$(YELLOW)⚠️  $(RESET)%s \n"
 ERROR := printf "$(RED)❌ $(RESET)%s \n"
 WORKING := printf "$(CYAN)🔨 $(RESET)%s \n"
-DEBUG := printf "$(MAGENTA)🔍 $(RESET)%s \n"
 ROCKET := printf "$(GREEN)🚀 $(RESET)%s \n"
-PACKAGE := printf "$(CYAN)📦 $(RESET)%s \n"
 TRASH := printf "$(YELLOW)🗑️  $(RESET)%s \n"
 
 # =============================================================================
@@ -223,6 +214,9 @@ build-%: generate | $(BIN_DIR) ## Build a single service (% = service name)
 	fi
 	@$(SUCCESS) "$* service was built successfully."
 
+# bake-<svc> is a placeholder hook: it performs no transformation by itself.
+# Projects can add prerequisites to it (or define their own bake-<name>) to
+# generate service-specific config before dev-<svc> / run-<svc> use it.
 .PHONY: bake-%
 bake-%: ## Prepare service (% = service name)
 	@$(INFO) "Baking config for $* ..."
