@@ -213,11 +213,10 @@ TRASH := printf "$(YELLOW)🗑️  $(RESET)%s \n"
 # =============================================================================
 ##@ 🎯 Core Build System
 # =============================================================================
-# Attach the lifecycle prerequisites (generation, dependency prep, hooks, output
-# directory) only to configured services. An unknown service name therefore has
-# no prerequisites, so it fails in the recipe below before any of that work runs.
-$(foreach svc,$(SERVICES),$(eval build-$(svc): generate | $(BIN_DIR)))
-$(foreach svc,$(SERVICES),$(eval dev-$(svc): deps bake-$(svc) generate))
+# Attach the build prerequisites only to configured services, so an unknown name
+# has none and fails in the recipe before any work. SKIP_GENERATE=1 is passed by
+# run-<svc> after it has generated explicitly, to avoid generating twice.
+$(foreach svc,$(SERVICES),$(eval build-$(svc): $(if $(SKIP_GENERATE),,generate) | $(BIN_DIR)))
 
 .PHONY: build
 build: $(BIN_DIR) ## Build all services
@@ -355,13 +354,18 @@ deps-verify: ## Verify dependencies
 dev-%: ## Start development environment (% = service name)
 	@$(require_service)
 	@$(INFO) "Starting $* development environment..."
+	+@$(MAKE) deps
+	+@$(MAKE) bake-$*
+	+@$(MAKE) generate
 	@$(ROCKET) "Running $*..."
 	$(GO) run ./$(SERVICE_PATH)/main.go
 
 .PHONY: run-%
 run-%: ## Run the application (% = service name)
 	@$(require_service)
-	+@$(MAKE) bake-$* build-$*
+	+@$(MAKE) bake-$*
+	+@$(MAKE) generate
+	+@$(MAKE) build-$* SKIP_GENERATE=1
 	@$(ROCKET) "Running $*..."
 	@$(BIN_DIR)/$*
 

@@ -30,6 +30,8 @@ generated inside each temp directory for the command/failure assertions.
 - **Service validation:** exact-literal membership (a prefix or regex punctuation
   is rejected) and no Go/dependency/generation/bake work for unknown
   `build-*/dev-*/run-*`.
+- **Lifecycle order:** `deps → bake → generate → build/run` are sequenced (deps
+  only for `dev-*`), each stage gating the next, and failures stop the chain.
 - **Behaviour:** parallel and serial builds, shared `go generate` (runs once),
   `BIN_DIR` override, updater verification and mismatch, report tool checks.
 - **Tools:** an install failure stops `make tools` immediately, installs land in

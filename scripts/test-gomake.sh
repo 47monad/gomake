@@ -57,7 +57,7 @@ new_work() {
   export STUB_GOPATH="$WORK/gopath"
   export STUB_GOOS="linux"
   export STUB_GOARCH="amd64"
-  unset STUB_CURL_SRC STUB_GO_INSTALL_FAIL STUB_GO_GENERATE_FAIL STUB_GO_BUILD_FAIL 2>/dev/null || true
+  unset STUB_CURL_SRC STUB_GO_INSTALL_FAIL STUB_GO_GENERATE_FAIL STUB_GO_GENERATE_REQUIRES STUB_GO_BUILD_FAIL 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -108,8 +108,22 @@ case "$cmd" in
       : > "$GOBIN/${pkg##*/}"
       chmod +x "$GOBIN/${pkg##*/}"
     fi ;;
-  generate) [ "${STUB_GO_GENERATE_FAIL:-0}" = 1 ] && { echo "fake go: generate failed" >&2; exit 1; } ;;
-  build|test) [ "${STUB_GO_BUILD_FAIL:-0}" = 1 ] && { echo "fake go: build failed" >&2; exit 1; } ;;
+  generate)
+    if [ "${STUB_GO_GENERATE_FAIL:-0}" = 1 ]; then echo "fake go: generate failed" >&2; exit 1; fi
+    if [ -n "${STUB_GO_GENERATE_REQUIRES:-}" ] && [ ! -f "$STUB_GO_GENERATE_REQUIRES" ]; then
+      echo "fake go: generate requires $STUB_GO_GENERATE_REQUIRES" >&2; exit 1
+    fi ;;
+  build)
+    [ "${STUB_GO_BUILD_FAIL:-0}" = 1 ] && { echo "fake go: build failed" >&2; exit 1; }
+    out=""; args=("$@")
+    for ((i=0;i<${#args[@]};i++)); do [ "${args[$i]}" = "-o" ] && out="${args[$((i+1))]}"; done
+    if [ -n "$out" ]; then
+      mkdir -p "$(dirname "$out")"
+      printf '#!/bin/sh\necho "ran %s"\n' "$out" > "$out"
+      chmod +x "$out"
+    fi ;;
+  test)
+    [ "${STUB_GO_BUILD_FAIL:-0}" = 1 ] && { echo "fake go: test failed" >&2; exit 1; } ;;
 esac
 exit 0
 SH
@@ -219,6 +233,9 @@ TESTS=(
   service_membership_exact
   generate_once_parallel
   bin_dir_override
+  lifecycle_order_dev
+  lifecycle_order_run
+  lifecycle_failure_stops
   self_update_verify_ok
   self_update_mismatch
   updater_rejects_expression
@@ -470,6 +487,73 @@ t_bin_dir_override() {
   run_make "$d" "$WORK/out" build-foo BIN_DIR="$WORK/custombin"
   [ "$MAKE_RC" = 0 ] || { log "  build-foo exited $MAKE_RC"; return 1; }
   [ -x "$WORK/custombin/foo" ] || { log "  BIN_DIR override not honored"; return 1; }
+  return 0
+}
+
+t_lifecycle_order_dev() { # P05
+  local d="$WORK/life-dev"; make_module "$d"
+  mkdir -p "$d/cmd/foo"; write_main "$d/cmd/foo/main.go"
+  printf '\nbake-foo: bake-input\n.PHONY: bake-input\nbake-input:\n\t@touch "$(CURDIR)/bake-input.txt"\n' >> "$d/Makefile"
+  export STUB_GO_GENERATE_REQUIRES="$d/bake-input.txt"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" dev-foo
+  [ "$MAKE_RC" = 0 ] || { log "  dev-foo exited $MAKE_RC"; return 1; }
+  [ -f "$d/bake-input.txt" ] || { log "  bake hook did not run before generate"; return 1; }
+  local m g r
+  m=$(grep -n '^go mod download' "$STUB_LOG" | head -1 | cut -d: -f1)
+  g=$(grep -n '^go generate' "$STUB_LOG" | head -1 | cut -d: -f1)
+  r=$(grep -n '^go run ' "$STUB_LOG" | head -1 | cut -d: -f1)
+  if [ -z "$m" ] || [ -z "$g" ] || [ -z "$r" ] || [ "$m" -ge "$g" ] || [ "$g" -ge "$r" ]; then
+    log "  lifecycle order wrong (deps=$m generate=$g run=$r)"; return 1
+  fi
+  return 0
+}
+
+t_lifecycle_order_run() { # P05
+  local d="$WORK/life-run"; make_module "$d"
+  mkdir -p "$d/cmd/foo"; write_main "$d/cmd/foo/main.go"
+  printf '\nbake-foo: bake-input\n.PHONY: bake-input\nbake-input:\n\t@touch "$(CURDIR)/bake-input.txt"\n' >> "$d/Makefile"
+  export STUB_GO_GENERATE_REQUIRES="$d/bake-input.txt"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" run-foo
+  [ "$MAKE_RC" = 0 ] || { log "  run-foo exited $MAKE_RC"; return 1; }
+  [ -f "$d/bake-input.txt" ] || { log "  bake hook did not run"; return 1; }
+  has "$WORK/out" "ran " || { log "  the built binary did not run"; return 1; }
+  local g b n
+  g=$(grep -n '^go generate' "$STUB_LOG" | head -1 | cut -d: -f1)
+  b=$(grep -n '^go build' "$STUB_LOG" | head -1 | cut -d: -f1)
+  if [ -z "$g" ] || [ -z "$b" ] || [ "$g" -ge "$b" ]; then log "  generate/build order wrong (gen=$g build=$b)"; return 1; fi
+  n=$(grep -c '^go build' "$STUB_LOG")
+  [ "$n" = 1 ] || { log "  expected exactly one build, saw $n"; return 1; }
+  return 0
+}
+
+t_lifecycle_failure_stops() { # P05
+  local d="$WORK/life-fail"; make_module "$d"
+  mkdir -p "$d/cmd/foo"; write_main "$d/cmd/foo/main.go"
+  USE_STUBS=1
+  # generate failure must stop before build/run
+  export STUB_GO_GENERATE_FAIL=1
+  run_make "$d" "$WORK/out" run-foo
+  [ "$MAKE_RC" != 0 ] || { log "  run-foo should fail when generate fails"; return 1; }
+  if grep -qE '^go build' "$STUB_LOG"; then log "  build ran after a failed generate"; return 1; fi
+  not_has "$WORK/out" "ran " || { log "  binary ran after generate failed"; return 1; }
+  unset STUB_GO_GENERATE_FAIL
+  # build failure must stop before run
+  export STUB_GO_BUILD_FAIL=1
+  : > "$STUB_LOG"
+  run_make "$d" "$WORK/out2" run-foo
+  [ "$MAKE_RC" != 0 ] || { log "  run-foo should fail when build fails"; return 1; }
+  not_has "$WORK/out2" "ran " || { log "  binary ran after build failed"; return 1; }
+  unset STUB_GO_BUILD_FAIL
+  # bake failure must stop before generate/build/run
+  local d2="$WORK/life-failbake"; make_module "$d2"
+  mkdir -p "$d2/cmd/foo"; write_main "$d2/cmd/foo/main.go"
+  printf '\nbake-foo: bake-input\n.PHONY: bake-input\nbake-input:\n\t@echo "bake failed" >&2; exit 1\n' >> "$d2/Makefile"
+  : > "$STUB_LOG"
+  run_make "$d2" "$WORK/out3" run-foo
+  [ "$MAKE_RC" != 0 ] || { log "  run-foo should fail when bake fails"; return 1; }
+  if grep -qE '^go (generate|build)' "$STUB_LOG"; then log "  generate/build ran after bake failed"; return 1; fi
   return 0
 }
 

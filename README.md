@@ -84,6 +84,16 @@ make generate    # Run go generate ./...
 configured services **exactly** (no substring or regex matching) and reject an
 unknown one before running any Go, dependency download, generation, or bake step.
 
+The stages run in a fixed order: `dev-<svc>` does dependency prep → bake →
+generation → `go run`, and `run-<svc>` does bake → generation → build → the
+binary. Each stage must succeed before the next, so a failure stops the pipeline
+(this holds under `make -j`). `make build` still builds every service in one
+parallel invocation, with generation running once.
+
+Services that ship their own `cmd/<svc>/Makefile` are built by delegating to that
+file's `build` target *after* the top-level bake/generation stages; the custom
+Makefile owns its own compile step but not the lifecycle above.
+
 ### Tools & Utilities
 
 ```sh
