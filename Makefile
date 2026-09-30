@@ -1,21 +1,33 @@
-# 47monad GoMake v0.0.3
+# 47monad GoMake v0.1.0
 #
 # =============================================================================
 # ⚙️ Makefile Configuration
 # =============================================================================
 # Self-update source.
 #
-# GOMAKE_REF must be an immutable revision (a full commit SHA or a tag), never a
-# moving branch, and GOMAKE_SHA256 is the expected SHA-256 of Makefile at that
-# revision. `self-update` verifies the digest after downloading and before
-# replacing the local file, so a moved ref or a tampered download cannot inject
-# code. Bump both deliberately when releasing a new version; set
-# GOMAKE_ALLOW_UNVERIFIED=1 only for a one-off update verified by other means.
+# GOMAKE_REF must be an immutable revision (a tag or a full commit SHA), never a
+# moving branch. GOMAKE_SHA256 is the expected SHA-256 of Makefile at that
+# revision; `self-update` verifies it after downloading and before replacing the
+# local file, so a moved ref or a tampered download cannot inject code.
+#
+# The digest covers the file *excluding the GOMAKE_SHA256 assignment itself*, so
+# a release can pin its own checksum (a file cannot contain the hash of itself).
+# `make self-checksum` prints the value to record here when preparing a release.
+# GOMAKE_ALLOW_UNVERIFIED=1 skips the check for a one-off, otherwise-unverified
+# update.
+GOMAKE_VERSION ?= v0.1.0
 GOMAKE_REPO ?= 47monad/gomake
-GOMAKE_REF ?= fceb663695a329d269d00f70bbbec78c2249c714
-GOMAKE_SHA256 ?= d9e8a769fefbfef4319405a950300ddcd3f5dc5d600d661c30dab0702cd3bcda
+GOMAKE_REF ?= $(GOMAKE_VERSION)
+GOMAKE_SHA256 ?= 3ba8c859ba266c07e6ec01aea289276fce2cf08bbd7b3d88f12771d27f7faa25
 GOMAKE_ALLOW_UNVERIFIED ?= 0
 REPO_URL = https://raw.githubusercontent.com/$(GOMAKE_REPO)/$(GOMAKE_REF)/Makefile
+
+# SHA-256 command: sha256sum on GNU/Linux, shasum on macOS.
+SHA256 ?= $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
+
+# Hash everything except the GOMAKE_SHA256 assignment, so the pin can cover the
+# file that contains it (see the note above).
+DIGEST_FILTER = sed '/^GOMAKE_SHA256[[:space:]]*[?]*=/d'
 SELF_FILE=$(lastword $(MAKEFILE_LIST))
 
 # =============================================================================
@@ -427,11 +439,7 @@ self-update: ## Update GoMake from the pinned upstream revision
 	curl --proto '=https' --tlsv1.2 -sSfL "$(REPO_URL)" -o "$$tmp" || { $(ERROR) "download failed"; exit 1; }; \
 	if [ ! -s "$$tmp" ]; then $(ERROR) "downloaded file is empty"; exit 1; fi; \
 	if ! grep -q '[.]DEFAULT_GOAL' "$$tmp"; then $(ERROR) "downloaded file does not look like GoMake"; exit 1; fi; \
-	if command -v sha256sum >/dev/null 2>&1; then \
-		actual=$$(sha256sum "$$tmp" | awk '{print $$1}'); \
-	else \
-		actual=$$(shasum -a 256 "$$tmp" | awk '{print $$1}'); \
-	fi; \
+	actual=$$($(DIGEST_FILTER) "$$tmp" | $(SHA256) | awk '{print $$1}'); \
 	if [ -n "$(GOMAKE_SHA256)" ] && [ "$$actual" != "$(GOMAKE_SHA256)" ]; then \
 		$(ERROR) "checksum mismatch for $(GOMAKE_REPO)@$(GOMAKE_REF)"; \
 		$(ERROR) "expected $(GOMAKE_SHA256)"; \
@@ -451,6 +459,10 @@ self-update: ## Update GoMake from the pinned upstream revision
 	fi; \
 	mv "$$tmp" "$(SELF_FILE)"; \
 	$(SUCCESS) "Updated $(SELF_FILE) from $(GOMAKE_REPO)@$(GOMAKE_REF)."
+
+.PHONY: self-checksum
+self-checksum: ## Print the checksum to pin as GOMAKE_SHA256
+	@$(DIGEST_FILTER) "$(SELF_FILE)" | $(SHA256) | awk '{print $$1}'
 
 # =============================================================================
 ##@ 💡 Help
