@@ -126,9 +126,16 @@ expected digest of `Makefile` at that revision.
 
 The digest covers the file **excluding the `GOMAKE_SHA256` line itself**, so a
 release can pin its own checksum (a file cannot contain the hash of itself).
-`make self-checksum` prints that value for the local file. The download is
-written to a temporary file, validated, and only then renamed over the current
-Makefile, so a failed check never leaves a corrupted file behind.
+`make self-checksum` prints that value for the local file. Because that line is
+excluded from the hash, the updater also validates it as literal data: the
+download must contain exactly one `GOMAKE_SHA256 ?= <64-hex>` assignment whose
+value equals its own filtered digest, so a Make expression, a duplicate, an empty
+value, or a forged pin is rejected before anything is replaced.
+`GOMAKE_ALLOW_UNVERIFIED=1` only waives the caller-side pin; it never skips that
+structural check.
+
+The download is written to a temporary file, validated, and only then renamed
+over the current Makefile, so a failed check never leaves a corrupted file behind.
 
 To cut a release: bump `GOMAKE_VERSION`, run `make self-checksum`, set
 `GOMAKE_SHA256` to its output, commit, and tag that commit (e.g. `v0.1.0`).
