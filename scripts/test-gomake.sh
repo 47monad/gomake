@@ -15,6 +15,7 @@
 #
 # Exit status is nonzero if any test fails.
 
+# shellcheck disable=SC2329  # tests and helpers are dispatched indirectly by name
 set -uo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -235,7 +236,9 @@ t_help_and_service_listing() {
   run_make "$d" "$WORK/out" help
   has "$WORK/out" "Available targets:" || { log "  help missing target list"; return 1; }
   has "$WORK/out" "Service list:" || { log "  help missing service list"; return 1; }
-  has "$WORK/out" "foo" && has "$WORK/out" "bar" || { log "  help did not list services"; return 1; }
+  if ! { has "$WORK/out" "foo" && has "$WORK/out" "bar"; }; then
+    log "  help did not list services"; return 1
+  fi
   return 0
 }
 
@@ -435,6 +438,7 @@ t_updater_rejects_expression() { # P01
   local d="$WORK/updexpr"; make_module "$d"
   local dig; dig=$(filtered_digest "$d/Makefile")
   cp "$d/Makefile" "$WORK/staged"
+  # shellcheck disable=SC2016  # the literal $(shell ...) is the injection payload under test
   sed -E 's/^GOMAKE_SHA256.*/GOMAKE_SHA256 ?= $(shell echo pwned)/' "$WORK/staged" > "$WORK/staged.new"
   mv "$WORK/staged.new" "$WORK/staged"
   export STUB_CURL_SRC="$WORK/staged"
