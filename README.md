@@ -37,9 +37,15 @@ Run the following `make` commands to execute different tasks:
 ### Build
 
 ```sh
-make build       # Build all services
+make build       # Build all services (parallel on the local machine)
 make build-<svc> # Build a specific service (replace <svc> with service name)
 ```
+
+`make build` builds every service in one parallel `make` invocation, so shared
+prerequisites such as `go generate` run once. Parallelism is on when
+`BUILD_SYSTEM=local` (the default). Set `BUILD_SYSTEM=ci` to build serially,
+tune the number of jobs with `PARALLEL_JOBS`, or pass `make -jN` to choose your
+own job count (it is honored as-is).
 
 ### Testing & Coverage
 
