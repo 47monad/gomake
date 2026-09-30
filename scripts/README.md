@@ -29,6 +29,9 @@ generated inside each temp directory for the command/failure assertions.
   service Makefiles, no services, unknown services.
 - **Behaviour:** parallel and serial builds, shared `go generate` (runs once),
   `BIN_DIR` override, updater verification and mismatch, report tool checks.
+- **Updater hardening:** tampered pins (expression/duplicate/forged), moving-branch
+  refs, missing hash tool, download failure, invalid caller pin, self-file binding
+  across `include`s, permission preservation, staging failure, and symlinks.
 - **Regressions from closed issues:** #4, #5, #6, #7, #9, #10, #11, #12, #13,
   #14, #15, #16, #18, #19.
 

@@ -171,6 +171,21 @@ make_selfconsistent() { # <file> : pin the file to its own filtered digest; prin
   printf '%s' "$dig"
 }
 
+stage_release() { # <src> <dest> [marker...] : self-consistent copy of src; print its digest
+  local src=$1 dest=$2; shift 2
+  cp "$src" "$dest"
+  if [ "$#" -gt 0 ]; then printf '\n# %s\n' "$*" >> "$dest"; fi
+  local dig; dig=$(filtered_digest "$dest")
+  rewrite_pin "$dest" "$dig"
+  printf '%s' "$dig"
+}
+
+file_mode() { # <file>
+  if stat -c '%a' "$1" >/dev/null 2>&1; then stat -c '%a' "$1"; else stat -f '%Lp' "$1"; fi
+}
+
+not_has() { ! grep -qF -- "$2" "$1"; }
+
 # ---------------------------------------------------------------------------
 # Tests. Each prints a reason and returns 1 on failure.
 # ---------------------------------------------------------------------------
@@ -203,6 +218,10 @@ TESTS=(
   updater_missing_hash_tool
   updater_download_failure
   updater_rejects_caller_pin
+  updater_binds_to_template
+  updater_preserves_permissions
+  updater_staging_failure_visible
+  updater_symlink_target_untouched
   report_requires_tools
 )
 
@@ -513,6 +532,68 @@ t_updater_rejects_caller_pin() { # P01
   run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256=not-a-digest
   [ "$MAKE_RC" != 0 ] || { log "  invalid caller pin should fail"; return 1; }
   has "$WORK/out" "not a literal SHA-256" || { log "  missing invalid-pin message"; return 1; }
+  return 0
+}
+
+t_updater_binds_to_template() { # P02
+  local d="$WORK/include"
+  mkdir -p "$d"
+  cp "$MAKEFILE" "$d/gomake.mk"
+  printf '.PHONY: before\nbefore:\n\t@true\n' > "$d/before.mk"
+  printf '.PHONY: other\nother:\n\t@true\n' > "$d/other.mk"
+  printf 'include before.mk\ninclude gomake.mk\ninclude other.mk\n' > "$d/Makefile"
+  local dig; dig=$(stage_release "$d/gomake.mk" "$WORK/staged" "p02-marker")
+  export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig"
+  [ "$MAKE_RC" = 0 ] || { log "  exit $MAKE_RC"; return 1; }
+  has "$d/gomake.mk" "p02-marker" || { log "  gomake.mk was not updated"; return 1; }
+  not_has "$d/before.mk" "p02-marker" || { log "  before.mk was modified"; return 1; }
+  not_has "$d/other.mk" "p02-marker" || { log "  other.mk was modified"; return 1; }
+  not_has "$d/Makefile" "p02-marker" || { log "  wrapper Makefile was modified"; return 1; }
+  return 0
+}
+
+t_updater_preserves_permissions() { # P02
+  local d="$WORK/perm"; make_module "$d"
+  chmod 0644 "$d/Makefile"
+  local dig; dig=$(stage_release "$d/Makefile" "$WORK/staged" "perm-marker")
+  export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig"
+  [ "$MAKE_RC" = 0 ] || { log "  exit $MAKE_RC"; return 1; }
+  local mode; mode=$(file_mode "$d/Makefile")
+  [ "$mode" = "644" ] || { log "  mode is $mode, expected 644"; return 1; }
+  return 0
+}
+
+t_updater_staging_failure_visible() { # P02
+  local d="$WORK/rodir"; make_module "$d"
+  local ro="$WORK/ro"; mkdir -p "$ro"; chmod 0555 "$ro"
+  local dig; dig=$(stage_release "$d/Makefile" "$WORK/staged" "x")
+  export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update SELF_FILE="$ro/Makefile" GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig"
+  chmod 0755 "$ro"
+  [ "$MAKE_RC" != 0 ] || { log "  staging in a read-only dir should fail"; return 1; }
+  has "$WORK/out" "staging" || { log "  missing staging error"; return 1; }
+  not_has "$WORK/out" "Updated " || { log "  printed success on failure"; return 1; }
+  return 0
+}
+
+t_updater_symlink_target_untouched() { # P02
+  local d="$WORK/syms"; make_module "$d"
+  cp "$d/Makefile" "$WORK/real"
+  rm -f "$d/Makefile"; ln -s "$WORK/real" "$d/Makefile"
+  local before; before=$(hash_file "$WORK/real")
+  local dig; dig=$(stage_release "$WORK/real" "$WORK/staged" "sym-marker")
+  export STUB_CURL_SRC="$WORK/staged"
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" self-update GOMAKE_REF=v9.9.9 GOMAKE_SHA256="$dig"
+  [ "$MAKE_RC" = 0 ] || { log "  exit $MAKE_RC"; return 1; }
+  [ "$(hash_file "$WORK/real")" = "$before" ] || { log "  symlink target was modified"; return 1; }
+  has "$d/Makefile" "sym-marker" || { log "  the target path was not replaced"; return 1; }
+  if [ -L "$d/Makefile" ]; then log "  symlink should have been replaced by a regular file"; return 1; fi
   return 0
 }
 
