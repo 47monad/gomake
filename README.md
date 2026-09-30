@@ -7,8 +7,8 @@ Current version: **0.0.3**
 ## Overview
 
 Gomake is a powerful Makefile-based build system for Go projects, providing a
-streamlined workflow for building, testing, linting, and deploying Go services.
-It supports multi-service repositories, parallel builds, and extensive
+streamlined workflow for building, testing, linting, and reporting on Go
+services. It supports multi-service repositories, parallel builds, and extensive
 automation features.
 
 ## Features
@@ -54,11 +54,12 @@ make test        # Run tests
 make coverage    # Run tests with coverage report
 ```
 
-### Linting & Formatting
+### Linting, Formatting & Security
 
 ```sh
-make lint        # Run linters
-make fmt         # Format code
+make lint        # Run linters (golangci-lint)
+make fmt         # Format code (gofmt + gofumpt)
+make security    # Run security checks (govulncheck)
 ```
 
 ### Dependency Management
@@ -70,10 +71,24 @@ make deps-update # Update dependencies
 make deps-verify # Verify dependencies
 ```
 
-### Running Services
+### Development & Running
 
 ```sh
-make run-<svc>   # Run a specific service
+make dev-<svc>   # Run a service with go run (installs deps, bakes config, generates)
+make run-<svc>   # Build and run a service
+make bake-<svc>  # Prepare a service's config
+make generate    # Run go generate ./...
+```
+
+`run-<svc>` and `dev-<svc>` reject an unknown service name before doing any
+build or generation work, so a typo fails fast with a clear message.
+
+### Tools & Utilities
+
+```sh
+make tools       # Install the pinned linter, formatter and security tools
+make mock        # Generate mocks with mockery
+make version     # Show version, commit, branch and build metadata
 ```
 
 ### Reports
@@ -112,8 +127,30 @@ current Makefile, so a failed check never leaves a corrupted file behind.
 
 ## Configuration
 
-Modify environment variables in the Makefile to customize build settings,
-services, and testing parameters.
+Every variable below can be overridden on the command line or in the
+environment, e.g. `make build BUILD_SYSTEM=ci` or `make test TEST_PATTERN=TestFoo`.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PROJECT_NAME` | directory name | Display name; `-`/`_` become spaces and the first letter is capitalized |
+| `DESCRIPTION` | `<PROJECT_NAME> Project` | Shown in `make help` |
+| `SERVICE_DIRS` / `SERVICES` / `FLAT_SERVICE` | directories under `cmd/` | Services built and run by the `<svc>` targets |
+| `BUILD_SYSTEM` | `local` | `local` builds in parallel, `ci` builds serially |
+| `PARALLEL_JOBS` | detected CPU count | Job count used by `make build` (a `make -jN` on the command line wins) |
+| `VERSION_STRATEGY` | `git` | `git` (`git describe`), `semver` (reads `VERSION`) or `date` |
+| `VERSION_PKG` | `<module>/pkg/version` | Package receiving the injected version metadata |
+| `GO`, `GOOS`, `GOARCH` | Go defaults | Toolchain and target platform |
+| `CGO_ENABLED` | `0` | Cgo setting for builds |
+| `BUILD_TAGS`, `EXTRA_TAGS` | empty | Build tags applied to `go build` |
+| `GCFLAGS`, `ASMFLAGS` | empty | Extra compiler flags |
+| `TEST_FLAGS`, `TEST_TIMEOUT`, `TEST_PACKAGES`, `TEST_PATTERN`, `SKIP_PATTERN` | see Makefile | Test selection and flags |
+| `COVERAGE_OUT`, `COVERAGE_THRESHOLD` | `coverage.out`, `50` | Coverage profile and minimum percent |
+| `BENCH_FLAGS`, `BENCH_TIME` | `-benchmem`, `2s` | Used by `make benchmark-report` |
+| `BIN_DIR`, `DIST_DIR`, `DOCS_DIR` | `bin`, `dist`, `docs` | Output directories |
+| `GOLANGCI_LINT_VERSION`, `GOFUMPT_VERSION`, `GOVULNCHECK_VERSION` | pinned | Tool versions installed by `make tools` |
+| `GOMAKE_REPO`, `GOMAKE_REF`, `GOMAKE_SHA256` | pinned | Source and checksum used by `make self-update` |
+
+Run `make help` for the full target list and the detected service names.
 
 ### Version metadata
 

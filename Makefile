@@ -301,7 +301,7 @@ deps: ## Install dependencies
 	@$(SUCCESS) "Dependencies installed!"
 
 .PHONY: deps-tidy
-deps-tidy: ## Update dependencies
+deps-tidy: ## Tidy dependencies
 	@$(WORKING) "Tidying dependencies..."
 	$(GO) mod tidy
 	@$(SUCCESS) "Dependencies tidied!"
