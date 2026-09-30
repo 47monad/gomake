@@ -401,7 +401,8 @@ report: ## Generate project reports
 
 .PHONY: benchmark-report
 benchmark-report:
-	$(GO) test -bench=. -benchmem ./... > $(DOCS_DIR)/reports/benchmark.txt
+	@mkdir -p "$(DOCS_DIR)/reports"
+	$(GO) test $(BENCH_FLAGS) -bench=. -benchtime=$(BENCH_TIME) $(TEST_PACKAGES) > "$(DOCS_DIR)/reports/benchmark.txt"
 
 .PHONY: lint-report
 lint-report:
