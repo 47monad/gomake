@@ -36,6 +36,7 @@ SERVICE_DIRS := $(notdir $(foreach d,$(wildcard cmd/*),$(if $(wildcard $(d)/.),$
 FLAT_SERVICE ?= $(if $(strip $(SERVICE_DIRS)),,$(if $(wildcard cmd/main.go),main))
 SERVICES ?= $(SERVICE_DIRS) $(FLAT_SERVICE)
 SERVICE_PATH = $(if $(filter $(FLAT_SERVICE),$*),cmd,cmd/$*)
+SERVICE_TARGETS = $(addprefix build-,$(SERVICES))
 
 # Build Settings
 # BUILD_SYSTEM: local, ci
@@ -53,6 +54,11 @@ PARALLEL_JOBS ?= $(shell \
         echo 1; \
     fi)
 ENABLE_PARALLEL := $(if $(filter local,$(strip $(BUILD_SYSTEM))),true,false)
+
+# Job count for the aggregate build's sub-make. Only forced when the caller has
+# not chosen one, so a user-supplied `make -jN` is honored and the jobserver is
+# not double-forced (which would make make disable jobserver sharing).
+BUILD_JOBS = $(if $(filter true,$(ENABLE_PARALLEL)),$(if $(filter -j -j% --jobs%,$(MAKEFLAGS)),,--jobs=$(PARALLEL_JOBS)))
 
 # Version Control
 # VERSION_STRATEGY: git, semver, date
@@ -184,9 +190,7 @@ build: $(BIN_DIR) ## Build all services
 		$(ERROR) "No services found. Expected cmd/<name>/main.go or cmd/main.go."; \
 		exit 1; \
 	fi
-	@for service in $(SERVICES); do \
-		$(MAKE) build-$$service $(if $(filter true,$(ENABLE_PARALLEL)),--jobs=$(PARALLEL_JOBS)); \
-	done
+	+@$(MAKE) $(BUILD_JOBS) $(SERVICE_TARGETS)
 	@$(SUCCESS) "Build complete!"
 
 .PHONY: build-% 
