@@ -164,6 +164,7 @@ environment, e.g. `make build BUILD_SYSTEM=ci` or `make test TEST_PATTERN=TestFo
 | `VERSION_STRATEGY` | `git` | `git` (`git describe`), `semver` (reads `VERSION`) or `date` |
 | `VERSION_PKG` | `<module>/pkg/version` | Package receiving the injected version metadata |
 | `GO`, `GOOS`, `GOARCH` | Go defaults | Toolchain and target platform |
+| `GOBIN` | `go env GOBIN` or first `GOPATH`/bin | Where `make tools` installs tools |
 | `CGO_ENABLED` | `0` | Cgo setting for builds |
 | `BUILD_TAGS`, `EXTRA_TAGS` | empty | Build tags applied to `go build` |
 | `GCFLAGS`, `ASMFLAGS` | empty | Extra compiler flags |
@@ -194,6 +195,12 @@ rather than emitting an invalid import path.
 are reproducible and resilient to upstream breaking changes. Override the
 variables to upgrade deliberately; Go's module checksum database authenticates
 each downloaded module.
+
+Installs go to `GOBIN` (a configured/environment `GOBIN`, otherwise the first
+`GOPATH` element's `bin`), and each install must succeed and produce an
+executable — a failure stops the target immediately instead of reporting
+success. An existing tool at a custom `GOLANGCI_LINT`/`GOFUMPT`/`GOVULNCHECK`
+path is left untouched.
 
 ## License
 

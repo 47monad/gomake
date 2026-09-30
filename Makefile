@@ -108,7 +108,13 @@ BUILD_BY ?= $(shell whoami)
 # Go Configuration
 GO ?= go
 GOPATH ?= $(shell $(GO) env GOPATH)
-GOBIN ?= $(GOPATH)/bin
+# Where `go install` places tools: an explicit/inherited GOBIN (environment or
+# `go env -w GOBIN`), otherwise the first GOPATH element's bin. Exported so the
+# install location and the tool paths below always agree.
+GOBIN ?= $(shell \
+    if [ -n "$$($(GO) env GOBIN)" ]; then $(GO) env GOBIN; \
+    else echo "$$($(GO) env GOPATH | cut -d: -f1)/bin"; fi)
+export GOBIN
 GOOS ?= $(shell $(GO) env GOOS)
 GOARCH ?= $(shell $(GO) env GOARCH)
 CGO_ENABLED ?= 0
@@ -364,19 +370,28 @@ generate: ## Run code generation
 .PHONY: tools
 tools: ## Install all tools
 	@$(INFO) "Preparing installations ..."
-	@if [ ! -f "$(GOLANGCI_LINT)" ]; then \
+	@if [ ! -x "$(GOLANGCI_LINT)" ]; then \
 		$(INFO) "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."; \
-		$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
+		$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) \
+			|| { $(ERROR) "failed to install golangci-lint"; exit 1; }; \
+		[ -x "$(GOLANGCI_LINT)" ] \
+			|| { $(ERROR) "golangci-lint was not installed to $(GOLANGCI_LINT)"; exit 1; }; \
 		$(SUCCESS) "golangci-lint was installed successfully"; \
 	fi
-	@if [ ! -f "$(GOFUMPT)" ]; then \
+	@if [ ! -x "$(GOFUMPT)" ]; then \
 		$(INFO) "Installing gofumpt $(GOFUMPT_VERSION)..."; \
-		$(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION); \
+		$(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION) \
+			|| { $(ERROR) "failed to install gofumpt"; exit 1; }; \
+		[ -x "$(GOFUMPT)" ] \
+			|| { $(ERROR) "gofumpt was not installed to $(GOFUMPT)"; exit 1; }; \
 		$(SUCCESS) "gofumpt was installed successfully"; \
 	fi
-	@if [ ! -f "$(GOVULNCHECK)" ]; then \
+	@if [ ! -x "$(GOVULNCHECK)" ]; then \
 		$(INFO) "Installing govulncheck $(GOVULNCHECK_VERSION)..."; \
-		$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION); \
+		$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) \
+			|| { $(ERROR) "failed to install govulncheck"; exit 1; }; \
+		[ -x "$(GOVULNCHECK)" ] \
+			|| { $(ERROR) "govulncheck was not installed to $(GOVULNCHECK)"; exit 1; }; \
 		$(SUCCESS) "govulncheck was installed successfully"; \
 	fi
 	@$(SUCCESS) "Tools installed!"
