@@ -2,7 +2,7 @@
 
 ## Version
 
-Current version: **0.0.3**
+Current version: **0.1.0**
 
 ## Overview
 
@@ -114,16 +114,24 @@ caches shared by every project on the host, so it is opt-in.
 verifies its SHA-256 before replacing the local file:
 
 ```sh
-make self-update                                          # verify against the pinned GOMAKE_SHA256
-make self-update GOMAKE_REF=<rev> GOMAKE_SHA256=<sha256>  # move the pin to a new revision
-make self-update GOMAKE_ALLOW_UNVERIFIED=1                # skip verification (not recommended)
+make self-update                                           # verify against the pinned GOMAKE_SHA256
+make self-update GOMAKE_REF=v0.2.0 GOMAKE_SHA256=<sha256>  # move the pin to a new revision
+make self-checksum                                         # print the checksum of the current file
+make self-update GOMAKE_ALLOW_UNVERIFIED=1                 # skip verification (not recommended)
 ```
 
-`GOMAKE_REF` must be an immutable revision (a full commit SHA or a tag), never a
-moving branch, and `GOMAKE_SHA256` is the expected digest of `Makefile` at that
-revision. When releasing a new GoMake version, bump both together. The download
-is written to a temporary file, validated, and only then renamed over the
-current Makefile, so a failed check never leaves a corrupted file behind.
+`GOMAKE_REF` must be an immutable revision (a tag or a full commit SHA), never a
+moving branch; by default it tracks `GOMAKE_VERSION`. `GOMAKE_SHA256` is the
+expected digest of `Makefile` at that revision.
+
+The digest covers the file **excluding the `GOMAKE_SHA256` line itself**, so a
+release can pin its own checksum (a file cannot contain the hash of itself).
+`make self-checksum` prints that value for the local file. The download is
+written to a temporary file, validated, and only then renamed over the current
+Makefile, so a failed check never leaves a corrupted file behind.
+
+To cut a release: bump `GOMAKE_VERSION`, run `make self-checksum`, set
+`GOMAKE_SHA256` to its output, commit, and tag that commit (e.g. `v0.1.0`).
 
 ## Configuration
 
@@ -148,7 +156,7 @@ environment, e.g. `make build BUILD_SYSTEM=ci` or `make test TEST_PATTERN=TestFo
 | `BENCH_FLAGS`, `BENCH_TIME` | `-benchmem`, `2s` | Used by `make benchmark-report` |
 | `BIN_DIR`, `DIST_DIR`, `DOCS_DIR` | `bin`, `dist`, `docs` | Output directories |
 | `GOLANGCI_LINT_VERSION`, `GOFUMPT_VERSION`, `GOVULNCHECK_VERSION` | pinned | Tool versions installed by `make tools` |
-| `GOMAKE_REPO`, `GOMAKE_REF`, `GOMAKE_SHA256` | pinned | Source and checksum used by `make self-update` |
+| `GOMAKE_VERSION`, `GOMAKE_REPO`, `GOMAKE_REF`, `GOMAKE_SHA256` | pinned | Source and checksum used by `make self-update` |
 
 Run `make help` for the full target list and the detected service names.
 
