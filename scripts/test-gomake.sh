@@ -255,6 +255,9 @@ TESTS=(
   tools_skips_installed
   tools_respects_custom_tool
   report_requires_tools
+  runtime_keeps_explicit_docker_host
+  runtime_keeps_plain_docker
+  runtime_warns_without_rootful_podman
 )
 
 if [ "$LIST" = 1 ]; then printf '%s\n' "${TESTS[@]}"; exit 0; fi
@@ -802,6 +805,44 @@ t_report_requires_tools() { # regression #16
   [ "$MAKE_RC" != 0 ] || { log "  report should fail when tools are missing"; return 1; }
   has "$WORK/out" "is not installed; run 'make tools'" || { log "  missing actionable tool error"; return 1; }
   return 0
+}
+
+# Container runtime detection (Testcontainers). Only the "change nothing" and
+# warning paths are asserted here: the positive Podman path depends on a real
+# rootful socket on the host.
+runtime_stub() { # <name> <script body>
+  printf '#!/bin/sh\n%s\n' "$2" > "$STUB_BIN/$1"; chmod +x "$STUB_BIN/$1"
+}
+
+t_runtime_keeps_explicit_docker_host() {
+  local d="$WORK/rt1"
+  make_module "$d"
+  runtime_stub docker 'exit 1'
+  runtime_stub podman 'echo true'
+  USE_STUBS=1
+  ( cd "$d" && DOCKER_HOST=unix:///x/docker.sock PATH="$STUB_BIN:$PATH" make test-env ) >"$WORK/out" 2>&1
+  has "$WORK/out" "no variables set" || { log "  expected no variables"; return 1; }
+}
+
+t_runtime_keeps_plain_docker() {
+  local d="$WORK/rt2"
+  make_module "$d"
+  runtime_stub docker 'echo "Server: Docker Engine"'
+  runtime_stub podman 'echo true'
+  USE_STUBS=1
+  ( cd "$d" && env -u DOCKER_HOST PATH="$STUB_BIN:$PATH" make test-env ) >"$WORK/out" 2>&1
+  has "$WORK/out" "no variables set" || { log "  expected no variables"; return 1; }
+}
+
+t_runtime_warns_without_rootful_podman() {
+  local d="$WORK/rt3"
+  make_module "$d"
+  runtime_stub docker 'exit 1'
+  runtime_stub podman 'echo false'
+  USE_STUBS=1
+  ( cd "$d" && env -u DOCKER_HOST HOME="$WORK/nohome" PATH="$STUB_BIN:/usr/bin:/bin" make test-env ) >"$WORK/out" 2>&1
+  has "$WORK/out" "Container runtime for Testcontainers" || { log "  expected a playbook warning"; return 1; }
+  has "$WORK/out" "no variables set" || { log "  expected no variables"; return 1; }
 }
 
 # ---------------------------------------------------------------------------

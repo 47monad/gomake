@@ -187,6 +187,64 @@ BENCH_TIME ?= 2s
 TEST_PATTERN ?= .
 SKIP_PATTERN ?=
 
+# Container runtime for Testcontainers
+#
+# Tests that use Testcontainers need a working container runtime. Docker (or a
+# DOCKER_HOST that is already set) needs nothing and is left untouched. Rootful
+# Podman works only with the variables set below, so they are detected and
+# prefixed to `go test` as TESTCONTAINERS_ENV:
+#
+#   DOCKER_HOST                                 the rootful podman.sock (the name
+#                                               must contain "podman.sock" so
+#                                               testcontainers-go picks its
+#                                               Podman provider)
+#   TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE       the socket path *inside* the VM
+#                                               that Ryuk mounts
+#   TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED    Ryuk needs privileges to use that
+#                                               socket; Ryuk stays enabled
+#
+# Rootless Podman is not supported. Detection (POSIX sh) runs once, on first
+# use, so non-test targets never pay for it:
+#   1. DOCKER_HOST is set                      -> change nothing
+#   2. a reachable Docker daemon, not Podman   -> change nothing
+#   3. podman is installed and rootful         -> set the three variables
+#   4. podman without a rootful socket         -> warn on stderr, change nothing
+# Override with TESTCONTAINERS_ENV= (empty) to skip detection. `make test-env`
+# prints what was detected.
+TESTCONTAINERS_EXPLAIN ?=
+# Every line ends in ";" because GNU make 3.81 (macOS) joins the lines of a
+# $(shell) argument without a separator.
+define detect_container_runtime
+explain() { [ -z "$(TESTCONTAINERS_EXPLAIN)" ] || printf '%s\n' "$$*" >&2; };
+if [ -n "$${DOCKER_HOST:-}" ]; then explain "DOCKER_HOST is already set: nothing to change"; exit 0; fi;
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then 
+	if { docker info; docker version; } 2>/dev/null | grep -qi podman; then explain "docker CLI is backed by Podman"; else explain "Docker daemon reachable: nothing to change"; exit 0; fi;
+fi;
+if ! command -v podman >/dev/null 2>&1; then explain "no Docker daemon and no podman found: nothing to change"; exit 0; fi;
+sock=""; override="";
+if [ "$$(uname -s)" = Darwin ]; then 
+	if [ "$$(podman machine inspect --format '{{.Rootful}}' 2>/dev/null)" = true ]; then 
+		link=$$(readlink /var/run/docker.sock 2>/dev/null);
+		case "$$link" in */podman.sock) [ -S "$$link" ] && sock=$$link;; esac;
+		[ -n "$$sock" ] || { [ -S "$$HOME/.local/share/containers/podman/machine/podman.sock" ] && sock="$$HOME/.local/share/containers/podman/machine/podman.sock"; };
+		override=/var/run/docker.sock;
+	fi;
+else 
+	if [ -S /run/podman/podman.sock ] && [ -r /run/podman/podman.sock ] && [ -w /run/podman/podman.sock ]; then sock=/run/podman/podman.sock; override=$$sock; fi;
+fi;
+if [ -z "$$sock" ]; then 
+	explain "podman found but no rootful socket";
+	printf '%s\n' "gomake: Podman detected but no rootful Podman socket was found; running tests unchanged. See 'Container runtime for Testcontainers' in the engineering playbook (docs/backend/golang/microservices/testing-harness.md)." >&2;
+	exit 0;
+fi;
+explain "Podman rootful socket: $$sock";
+printf "DOCKER_HOST='unix://%s' TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='%s' TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED=true" "$$sock" "$$override";
+endef
+# Lazily computed once: the first expansion replaces this with its value.
+ifeq ($(origin TESTCONTAINERS_ENV),undefined)
+TESTCONTAINERS_ENV = $(eval TESTCONTAINERS_ENV := $(shell $(detect_container_runtime)))$(TESTCONTAINERS_ENV)
+endif
+
 # =============================================================================
 # 🎨 Terminal Colors & Emoji
 # =============================================================================
@@ -262,7 +320,7 @@ bake-%: ## Prepare service (% = service name)
 .PHONY: test
 test: ## Run tests
 	@$(INFO) "Running tests..."
-	$(GO) test $(TEST_FLAGS) \
+	$(TESTCONTAINERS_ENV) $(GO) test $(TEST_FLAGS) \
 		-timeout $(TEST_TIMEOUT) \
 		-run '$(TEST_PATTERN)' \
 		$(if $(SKIP_PATTERN),-skip '$(SKIP_PATTERN)') \
@@ -271,7 +329,7 @@ test: ## Run tests
 .PHONY: coverage
 coverage: ## Run tests with coverage
 	@$(INFO) "Running tests with coverage..."
-	$(GO) test $(TEST_FLAGS) \
+	$(TESTCONTAINERS_ENV) $(GO) test $(TEST_FLAGS) \
 		-timeout $(TEST_TIMEOUT) \
 		-coverprofile=$(COVERAGE_OUT) \
 		$(TEST_PACKAGES)
@@ -285,6 +343,14 @@ coverage: ## Run tests with coverage
 		exit 1; \
 	fi
 	@$(SUCCESS) "Coverage report generated: $(COVERAGE_HTML)"
+
+.PHONY: test-env
+test-env: TESTCONTAINERS_EXPLAIN = 1
+test-env: ## Show the container runtime detected for tests and the variables set
+	@$(INFO) "Container runtime for tests (Testcontainers):"
+	@env='$(TESTCONTAINERS_ENV)'; \
+	if [ -n "$$env" ]; then printf '%s\n' "$$env" | tr ' ' '\n' | sed 's/^/  /'; \
+	else printf '  (no variables set; tests run with the current environment)\n'; fi
 
 .PHONY: lint
 lint: ## Run linters
@@ -444,7 +510,7 @@ report: ## Generate project reports
 .PHONY: benchmark-report
 benchmark-report:
 	@mkdir -p "$(DOCS_DIR)/reports"
-	$(GO) test $(BENCH_FLAGS) -bench=. -benchtime=$(BENCH_TIME) $(TEST_PACKAGES) > "$(DOCS_DIR)/reports/benchmark.txt"
+	$(TESTCONTAINERS_ENV) $(GO) test $(BENCH_FLAGS) -bench=. -benchtime=$(BENCH_TIME) $(TEST_PACKAGES) > "$(DOCS_DIR)/reports/benchmark.txt"
 
 .PHONY: lint-report
 lint-report:
