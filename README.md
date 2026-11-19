@@ -53,6 +53,37 @@ own job count (it is honored as-is).
 make test        # Run tests
 make coverage    # Run tests with coverage report
 ```
+make test-env    # Show the container runtime detected for tests
+```
+
+#### Container runtime for Testcontainers
+
+`make test`, `make coverage` and `make benchmark-report` detect the container
+runtime once and prefix `go test` with the result (`TESTCONTAINERS_ENV`). Other
+targets never run the detection.
+
+| Situation | Result |
+| --- | --- |
+| `DOCKER_HOST` is already set (you or CI) | nothing changes |
+| A reachable Docker daemon that is not Podman | nothing changes |
+| Podman, rootful (macOS machine with `podman machine set --rootful`, or Linux with `/run/podman/podman.sock`) | sets the three variables below |
+| Podman present but not rootful, or no socket found | one warning on stderr, tests run unchanged |
+
+Variables set for rootful Podman:
+
+- `DOCKER_HOST=unix://<rootful podman.sock>`: the path must contain
+  `podman.sock`, which makes testcontainers-go use its Podman provider.
+- `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`: the socket path inside the VM that
+  Ryuk mounts (`/var/run/docker.sock` on macOS, `/run/podman/podman.sock` on
+  Linux).
+- `TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED=true`.
+
+Ryuk stays enabled; never set `TESTCONTAINERS_RYUK_DISABLED`. Rootless Podman is
+not supported. Run `make test-env` to see what was detected and why, or set
+`TESTCONTAINERS_ENV=` (empty) to skip detection. Without this setup, Podman
+fails every container create with `unable to find network with name or ID
+bridge`. The full explanation is in the engineering playbook, section
+"Container runtime for Testcontainers" (`docs/backend/golang/microservices/testing-harness.md`).
 
 ### Linting, Formatting & Security
 
