@@ -817,6 +817,7 @@ runtime_stub() { # <name> <script body>
 t_runtime_keeps_explicit_docker_host() {
   local d="$WORK/rt1"
   make_module "$d"
+  runtime_stub docker 'exit 1'
   runtime_stub podman 'echo true'
   USE_STUBS=1
   ( cd "$d" && DOCKER_HOST=unix:///x/docker.sock PATH="$STUB_BIN:$PATH" make test-env ) >"$WORK/out" 2>&1
@@ -836,6 +837,7 @@ t_runtime_keeps_plain_docker() {
 t_runtime_warns_without_rootful_podman() {
   local d="$WORK/rt3"
   make_module "$d"
+  runtime_stub docker 'exit 1'
   runtime_stub podman 'echo false'
   USE_STUBS=1
   ( cd "$d" && env -u DOCKER_HOST HOME="$WORK/nohome" PATH="$STUB_BIN:/usr/bin:/bin" make test-env ) >"$WORK/out" 2>&1
