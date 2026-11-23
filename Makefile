@@ -27,7 +27,7 @@ SELF_FILE := $(lastword $(MAKEFILE_LIST))
 GOMAKE_VERSION ?= v0.1.0
 GOMAKE_REPO ?= 47monad/gomake
 GOMAKE_REF ?= $(GOMAKE_VERSION)
-GOMAKE_SHA256 ?= 6ed56fd83ccb9cef9a8cd2868fcc9d2bc02b67ea617457391b6124c87da5b8e7
+GOMAKE_SHA256 ?= 5670ffa5d62a7c181965ab58b3442ab171907904ea2ae39e9718dbda32602a00
 GOMAKE_ALLOW_UNVERIFIED ?= 0
 # Exported so the recipe reads them as data, never interpolated into shell code.
 export GOMAKE_REPO GOMAKE_REF GOMAKE_SHA256 GOMAKE_ALLOW_UNVERIFIED SELF_FILE
@@ -199,7 +199,7 @@ SKIP_PATTERN ?=
 # local runs match CI. The cache holds one full checkout per released bundle at
 # <cache>/go-microservice/<version>. A missing cache is not acquired
 # automatically; `check` prints the resolve-bundle command instead.
-PLAYBOOK_CACHE ?= $(HOME)/.cache/47monad/playbook
+PLAYBOOK_CACHE ?= $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/47monad/engineering-playbook
 PLAYBOOK_BUNDLE_VERSION ?= $(shell awk -F: '/^[[:space:]]*version[[:space:]]*:/ { v = $$2; gsub(/[[:space:]"'"'"']/, "", v); print v; exit }' .47monad/standards.yaml 2>/dev/null)
 PLAYBOOK_DIR ?= $(PLAYBOOK_CACHE)/go-microservice/$(PLAYBOOK_BUNDLE_VERSION)
 PLAYBOOK_CHECK_ARGS ?=
