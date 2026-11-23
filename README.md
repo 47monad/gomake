@@ -128,7 +128,7 @@ GOWORK=off go -C <playbook>/tooling run ./cmd/playbook resolve-bundle \
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PLAYBOOK_CACHE` | `~/.cache/47monad/playbook` | Root of the released bundle cache |
+| `PLAYBOOK_CACHE` | `${XDG_CACHE_HOME:-~/.cache}/47monad/engineering-playbook` | Root of the released bundle cache, shared with the playbook installer |
 | `PLAYBOOK_BUNDLE_VERSION` | `version:` from `.47monad/standards.yaml` | Bundle version to check against |
 | `PLAYBOOK_DIR` | `$(PLAYBOOK_CACHE)/go-microservice/$(PLAYBOOK_BUNDLE_VERSION)` | Playbook checkout containing `tooling/` |
 | `PLAYBOOK_CHECK_ARGS` | empty | Extra arguments passed to `cmd/playbook check` |

@@ -259,6 +259,7 @@ TESTS=(
   check_missing_standards
   check_missing_version
   check_missing_cache
+  check_default_cache_path
   check_runs_playbook
   runtime_keeps_explicit_docker_host
   runtime_keeps_plain_docker
@@ -857,6 +858,18 @@ t_check_missing_cache() {
   has "$WORK/out" "empty-cache/go-microservice/9.9.9/tooling" || { log "  cache error does not name the tooling path"; return 1; }
   has "$WORK/out" "<playbook-checkout>/tooling run ./cmd/playbook resolve-bundle" || { log "  cache error does not print the acquire command"; return 1; }
   has "$WORK/out" "--mode acquire --cache-dir $WORK/empty-cache" || { log "  acquire command does not target the cache"; return 1; }
+  return 0
+}
+
+t_check_default_cache_path() {
+  local d="$WORK/checkdefaultcache"
+  make_module "$d"
+  mkdir -p "$d/.47monad"
+  printf 'schema: 1\nbundle: go-microservice\nversion: 9.9.9\n' > "$d/.47monad/standards.yaml"
+  USE_STUBS=0
+  XDG_CACHE_HOME="$WORK/xdg" run_make "$d" "$WORK/out" check
+  has "$WORK/out" "$WORK/xdg/47monad/engineering-playbook/go-microservice/9.9.9/tooling" \
+    || { log "  default cache does not follow the playbook installer location"; return 1; }
   return 0
 }
 
