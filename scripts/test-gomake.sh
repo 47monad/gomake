@@ -855,7 +855,8 @@ t_check_missing_cache() {
   run_make "$d" "$WORK/out" check PLAYBOOK_CACHE="$WORK/empty-cache"
   [ "$MAKE_RC" != 0 ] || { log "  check should fail when the bundle is not cached"; return 1; }
   has "$WORK/out" "empty-cache/go-microservice/9.9.9/tooling" || { log "  cache error does not name the tooling path"; return 1; }
-  has "$WORK/out" "resolve-bundle --service . --mode acquire" || { log "  cache error does not print the acquire command"; return 1; }
+  has "$WORK/out" "<playbook-checkout>/tooling run ./cmd/playbook resolve-bundle" || { log "  cache error does not print the acquire command"; return 1; }
+  has "$WORK/out" "--mode acquire --cache-dir $WORK/empty-cache" || { log "  acquire command does not target the cache"; return 1; }
   return 0
 }
 
@@ -863,7 +864,7 @@ t_check_runs_playbook() {
   local d="$WORK/checkrun"
   make_module "$d"
   mkdir -p "$d/.47monad" "$WORK/playbook/tooling"
-  printf 'schema: 1\nbundle: go-microservice\nversion: 0.5.0\n' > "$d/.47monad/standards.yaml"
+  printf 'schema: 1\nbundle: go-microservice\nversion: "0.5.0"\n' > "$d/.47monad/standards.yaml"
   local root; root=$(cd "$d" && pwd -P)
   USE_STUBS=1
   run_make "$d" "$WORK/out" check PLAYBOOK_DIR="$WORK/playbook" PLAYBOOK_CHECK_ARGS="--only layout"

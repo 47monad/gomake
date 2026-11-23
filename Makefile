@@ -27,7 +27,7 @@ SELF_FILE := $(lastword $(MAKEFILE_LIST))
 GOMAKE_VERSION ?= v0.1.0
 GOMAKE_REPO ?= 47monad/gomake
 GOMAKE_REF ?= $(GOMAKE_VERSION)
-GOMAKE_SHA256 ?= 8faec2478339c1c5a54c5c7abcd4c191c5d7f12297b6c078312533080e1f30d3
+GOMAKE_SHA256 ?= 6ed56fd83ccb9cef9a8cd2868fcc9d2bc02b67ea617457391b6124c87da5b8e7
 GOMAKE_ALLOW_UNVERIFIED ?= 0
 # Exported so the recipe reads them as data, never interpolated into shell code.
 export GOMAKE_REPO GOMAKE_REF GOMAKE_SHA256 GOMAKE_ALLOW_UNVERIFIED SELF_FILE
@@ -200,7 +200,7 @@ SKIP_PATTERN ?=
 # <cache>/go-microservice/<version>. A missing cache is not acquired
 # automatically; `check` prints the resolve-bundle command instead.
 PLAYBOOK_CACHE ?= $(HOME)/.cache/47monad/playbook
-PLAYBOOK_BUNDLE_VERSION ?= $(shell awk -F: '/^[[:space:]]*version[[:space:]]*:/ { v = $$2; gsub(/[[:space:]]/, "", v); print v; exit }' .47monad/standards.yaml 2>/dev/null)
+PLAYBOOK_BUNDLE_VERSION ?= $(shell awk -F: '/^[[:space:]]*version[[:space:]]*:/ { v = $$2; gsub(/[[:space:]"'"'"']/, "", v); print v; exit }' .47monad/standards.yaml 2>/dev/null)
 PLAYBOOK_DIR ?= $(PLAYBOOK_CACHE)/go-microservice/$(PLAYBOOK_BUNDLE_VERSION)
 PLAYBOOK_CHECK_ARGS ?=
 
@@ -400,7 +400,7 @@ check: ## Run playbook convention checks
 	fi
 	@if [ ! -d "$(PLAYBOOK_DIR)/tooling" ]; then \
 		$(ERROR) "playbook bundle $(PLAYBOOK_BUNDLE_VERSION) is not cached at $(PLAYBOOK_DIR)/tooling"; \
-		$(INFO) "acquire it with: GOWORK=off go -C $(PLAYBOOK_DIR)/tooling run ./cmd/playbook resolve-bundle --service . --mode acquire --cache-dir $(PLAYBOOK_CACHE)"; \
+		$(INFO) "acquire it from any engineering-playbook checkout: GOWORK=off go -C <playbook-checkout>/tooling run ./cmd/playbook resolve-bundle --service $(CURDIR) --mode acquire --cache-dir $(PLAYBOOK_CACHE)"; \
 		exit 1; \
 	fi
 	@$(INFO) "Running playbook convention checks (bundle $(PLAYBOOK_BUNDLE_VERSION))..."
