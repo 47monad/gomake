@@ -34,6 +34,10 @@ generated inside each temp directory for the command/failure assertions.
   only for `dev-*`), each stage gating the next, and failures stop the chain.
 - **Behaviour:** parallel and serial builds, shared `go generate` (runs once),
   `BIN_DIR` override, updater verification and mismatch, report tool checks.
+- **Playbook checks:** `make check` appears in help, rejects a missing
+  `.47monad/standards.yaml` or version, reports a missing bundle cache with the
+  acquire command, and invokes `cmd/playbook check` with the expected root and
+  extra arguments.
 - **Tools:** an install failure stops `make tools` immediately, installs land in
   `GOBIN` (default and override), a second run is a no-op, and an existing custom
   tool path is not overwritten.

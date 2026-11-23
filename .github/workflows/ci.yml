@@ -9,7 +9,10 @@ name: CI
 # full commit SHA, so fork PRs cannot run with write credentials.
 
 on:
+  # Branch pushes are covered by their pull_request run; running both
+  # duplicated every job and queued a second macOS runner per commit.
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

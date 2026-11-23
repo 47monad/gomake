@@ -27,7 +27,7 @@ SELF_FILE := $(lastword $(MAKEFILE_LIST))
 GOMAKE_VERSION ?= v0.1.0
 GOMAKE_REPO ?= 47monad/gomake
 GOMAKE_REF ?= $(GOMAKE_VERSION)
-GOMAKE_SHA256 ?= 3ba8c859ba266c07e6ec01aea289276fce2cf08bbd7b3d88f12771d27f7faa25
+GOMAKE_SHA256 ?= 6ed56fd83ccb9cef9a8cd2868fcc9d2bc02b67ea617457391b6124c87da5b8e7
 GOMAKE_ALLOW_UNVERIFIED ?= 0
 # Exported so the recipe reads them as data, never interpolated into shell code.
 export GOMAKE_REPO GOMAKE_REF GOMAKE_SHA256 GOMAKE_ALLOW_UNVERIFIED SELF_FILE
@@ -186,6 +186,23 @@ BENCH_FLAGS ?= -benchmem
 BENCH_TIME ?= 2s
 TEST_PATTERN ?= .
 SKIP_PATTERN ?=
+
+# Engineering Playbook Checks
+#
+# A service declares its playbook bundle in .47monad/standards.yaml, for example:
+#
+#   schema: 1
+#   bundle: go-microservice
+#   version: 0.5.0
+#
+# `make check` runs the playbook's convention checks from the cached bundle, so
+# local runs match CI. The cache holds one full checkout per released bundle at
+# <cache>/go-microservice/<version>. A missing cache is not acquired
+# automatically; `check` prints the resolve-bundle command instead.
+PLAYBOOK_CACHE ?= $(HOME)/.cache/47monad/playbook
+PLAYBOOK_BUNDLE_VERSION ?= $(shell awk -F: '/^[[:space:]]*version[[:space:]]*:/ { v = $$2; gsub(/[[:space:]"'"'"']/, "", v); print v; exit }' .47monad/standards.yaml 2>/dev/null)
+PLAYBOOK_DIR ?= $(PLAYBOOK_CACHE)/go-microservice/$(PLAYBOOK_BUNDLE_VERSION)
+PLAYBOOK_CHECK_ARGS ?=
 
 # Container runtime for Testcontainers
 #
@@ -370,6 +387,25 @@ security: ## Run security checks
 	@$(INFO) "Running security checks..."
 	$(GOVULNCHECK) ./...
 	@$(SUCCESS) "Security check complete!"
+
+.PHONY: check
+check: ## Run playbook convention checks
+	@if [ ! -f ".47monad/standards.yaml" ]; then \
+		$(ERROR) "missing .47monad/standards.yaml; declare the playbook bundle and version"; \
+		exit 1; \
+	fi
+	@if [ -z "$(strip $(PLAYBOOK_BUNDLE_VERSION))" ]; then \
+		$(ERROR) "no playbook bundle version found in .47monad/standards.yaml; add a 'version:' line"; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(PLAYBOOK_DIR)/tooling" ]; then \
+		$(ERROR) "playbook bundle $(PLAYBOOK_BUNDLE_VERSION) is not cached at $(PLAYBOOK_DIR)/tooling"; \
+		$(INFO) "acquire it from any engineering-playbook checkout: GOWORK=off go -C <playbook-checkout>/tooling run ./cmd/playbook resolve-bundle --service $(CURDIR) --mode acquire --cache-dir $(PLAYBOOK_CACHE)"; \
+		exit 1; \
+	fi
+	@$(INFO) "Running playbook convention checks (bundle $(PLAYBOOK_BUNDLE_VERSION))..."
+	GOWORK=off $(GO) -C "$(PLAYBOOK_DIR)/tooling" run ./cmd/playbook check --root "$(CURDIR)" $(PLAYBOOK_CHECK_ARGS)
+	@$(SUCCESS) "Playbook convention checks complete!"
 
 # =============================================================================
 ##@ 🧹 Cleanup & Maintenance
