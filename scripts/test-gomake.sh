@@ -255,6 +255,11 @@ TESTS=(
   tools_skips_installed
   tools_respects_custom_tool
   report_requires_tools
+  check_help_listing
+  check_missing_standards
+  check_missing_version
+  check_missing_cache
+  check_runs_playbook
   runtime_keeps_explicit_docker_host
   runtime_keeps_plain_docker
   runtime_warns_without_rootful_podman
@@ -615,7 +620,9 @@ t_updater_rejects_duplicate() { # P01
 
 t_updater_rejects_forged_pin() { # P01
   local d="$WORK/updforge"; make_module "$d"
-  cp "$d/Makefile" "$WORK/staged"   # embedded pin is the repo's, not the staged file's own digest
+  cp "$d/Makefile" "$WORK/staged"
+  # Forge the embedded pin so it cannot match the file's own filtered digest.
+  rewrite_pin "$WORK/staged" 0000000000000000000000000000000000000000000000000000000000000000
   local dig; dig=$(filtered_digest "$WORK/staged")
   export STUB_CURL_SRC="$WORK/staged"
   USE_STUBS=1
@@ -804,6 +811,66 @@ t_report_requires_tools() { # regression #16
     GOLANGCI_LINT="$WORK/nope-golangci-lint" GOVULNCHECK="$WORK/nope-govulncheck"
   [ "$MAKE_RC" != 0 ] || { log "  report should fail when tools are missing"; return 1; }
   has "$WORK/out" "is not installed; run 'make tools'" || { log "  missing actionable tool error"; return 1; }
+  return 0
+}
+
+t_check_help_listing() {
+  local d="$WORK/checkhelp"
+  make_module "$d"
+  USE_STUBS=0
+  run_make "$d" "$WORK/out" help
+  [ "$MAKE_RC" = 0 ] || { log "  make help exited $MAKE_RC"; return 1; }
+  has "$WORK/out" "Run playbook convention checks" || { log "  check is missing from help"; return 1; }
+  return 0
+}
+
+t_check_missing_standards() {
+  local d="$WORK/checknostd"
+  make_module "$d"
+  USE_STUBS=0
+  run_make "$d" "$WORK/out" check
+  [ "$MAKE_RC" != 0 ] || { log "  check should fail without .47monad/standards.yaml"; return 1; }
+  has "$WORK/out" "missing .47monad/standards.yaml" || { log "  missing standards error"; return 1; }
+  return 0
+}
+
+t_check_missing_version() {
+  local d="$WORK/checknover"
+  make_module "$d"
+  mkdir -p "$d/.47monad"
+  printf 'schema: 1\nbundle: go-microservice\n' > "$d/.47monad/standards.yaml"
+  USE_STUBS=0
+  run_make "$d" "$WORK/out" check
+  [ "$MAKE_RC" != 0 ] || { log "  check should fail without a version"; return 1; }
+  has "$WORK/out" "no playbook bundle version" || { log "  missing version error"; return 1; }
+  return 0
+}
+
+t_check_missing_cache() {
+  local d="$WORK/checknocache"
+  make_module "$d"
+  mkdir -p "$d/.47monad"
+  printf 'schema: 1\nbundle: go-microservice\nversion: 9.9.9\n' > "$d/.47monad/standards.yaml"
+  USE_STUBS=0
+  run_make "$d" "$WORK/out" check PLAYBOOK_CACHE="$WORK/empty-cache"
+  [ "$MAKE_RC" != 0 ] || { log "  check should fail when the bundle is not cached"; return 1; }
+  has "$WORK/out" "empty-cache/go-microservice/9.9.9/tooling" || { log "  cache error does not name the tooling path"; return 1; }
+  has "$WORK/out" "resolve-bundle --service . --mode acquire" || { log "  cache error does not print the acquire command"; return 1; }
+  return 0
+}
+
+t_check_runs_playbook() {
+  local d="$WORK/checkrun"
+  make_module "$d"
+  mkdir -p "$d/.47monad" "$WORK/playbook/tooling"
+  printf 'schema: 1\nbundle: go-microservice\nversion: 0.5.0\n' > "$d/.47monad/standards.yaml"
+  local root; root=$(cd "$d" && pwd -P)
+  USE_STUBS=1
+  run_make "$d" "$WORK/out" check PLAYBOOK_DIR="$WORK/playbook" PLAYBOOK_CHECK_ARGS="--only layout"
+  [ "$MAKE_RC" = 0 ] || { log "  check exited $MAKE_RC"; return 1; }
+  has "$WORK/out" "bundle 0.5.0" || { log "  version was not read from standards.yaml"; return 1; }
+  has "$STUB_LOG" "go -C $WORK/playbook/tooling run ./cmd/playbook check --root $root --only layout" \
+    || { log "  playbook check was not invoked with the expected arguments"; return 1; }
   return 0
 }
 

@@ -17,6 +17,7 @@ automation features.
 - 🧪 **Testing & Coverage**: Runs unit tests, generates coverage reports, and
 checks for race conditions.
 - 🎨 **Code Quality**: Lints code, formats files, and runs security checks.
+- ✅ **Convention Checks**: Runs the engineering playbook's checks locally, exactly as CI does.
 - 🔄 **Dependency Management**: Installs, updates, and verifies dependencies.
 - 📊 **Reporting & Analytics**: Generates benchmark, lint, and security reports.
 - 🔁 **Self-Update**: Fetches the Makefile from a pinned upstream revision and verifies its checksum before replacing the local file.
@@ -92,6 +93,45 @@ make lint        # Run linters (golangci-lint)
 make fmt         # Format code (gofmt + gofumpt)
 make security    # Run security checks (govulncheck)
 ```
+
+### Convention Checks
+
+`make check` runs the engineering playbook's convention checks locally, so
+developers and agents run exactly what CI runs. The service declares its bundle
+in `.47monad/standards.yaml`:
+
+```yaml
+schema: 1
+bundle: go-microservice
+version: 0.5.0
+```
+
+The target reads `version:` and runs the playbook checkout cached at
+`<cache>/go-microservice/<version>/tooling`:
+
+```sh
+make check                                  # Run the playbook checks
+make check PLAYBOOK_CHECK_ARGS="--skip deadcode"
+make check PLAYBOOK_DIR=/path/to/playbook   # Use a local checkout instead
+```
+
+Exit status follows the playbook tool: it reports `1` for findings, `2` when the
+check could not run, and `0` when OK (warnings may still be printed). `make
+check` fails on any nonzero result. A missing `.47monad/standards.yaml`, an empty
+version, or a missing cache fails with an actionable error. The cache is never
+acquired automatically; the error prints the command to run:
+
+```sh
+GOWORK=off go -C <playbook>/tooling run ./cmd/playbook resolve-bundle \
+  --service . --mode acquire --cache-dir <cache>
+```
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PLAYBOOK_CACHE` | `~/.cache/47monad/playbook` | Root of the released bundle cache |
+| `PLAYBOOK_BUNDLE_VERSION` | `version:` from `.47monad/standards.yaml` | Bundle version to check against |
+| `PLAYBOOK_DIR` | `$(PLAYBOOK_CACHE)/go-microservice/$(PLAYBOOK_BUNDLE_VERSION)` | Playbook checkout containing `tooling/` |
+| `PLAYBOOK_CHECK_ARGS` | empty | Extra arguments passed to `cmd/playbook check` |
 
 ### Dependency Management
 
@@ -215,6 +255,7 @@ environment, e.g. `make build BUILD_SYSTEM=ci` or `make test TEST_PATTERN=TestFo
 | `BENCH_FLAGS`, `BENCH_TIME` | `-benchmem`, `2s` | Used by `make benchmark-report` |
 | `BIN_DIR`, `DIST_DIR`, `DOCS_DIR` | `bin`, `dist`, `docs` | Output directories |
 | `GOLANGCI_LINT_VERSION`, `GOFUMPT_VERSION`, `GOVULNCHECK_VERSION` | pinned | Tool versions installed by `make tools` |
+| `PLAYBOOK_CACHE`, `PLAYBOOK_DIR`, `PLAYBOOK_BUNDLE_VERSION`, `PLAYBOOK_CHECK_ARGS` | see Makefile | Playbook bundle cache, checkout, version and check arguments used by `make check` |
 | `GOMAKE_VERSION`, `GOMAKE_REPO`, `GOMAKE_REF`, `GOMAKE_SHA256` | pinned | Source and checksum used by `make self-update` |
 
 Run `make help` for the full target list and the detected service names.
